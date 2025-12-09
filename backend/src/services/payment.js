@@ -14,29 +14,44 @@ function round2(v) {
 }
 
 /**
- * Aplica redondeo según reglas peruanas (solo para efectivo)
- * Redondea a múltiplos de 0.10
- * .01-.04 → redondea hacia abajo
- * .05-.09 → redondea hacia arriba
+ * Aplica Redondeo de Banquero (Redondeo al Par Más Cercano)
+ * Reglas:
+ * - Si saldo < 0.05: redondea a 0 (cuota considerada pagada)
+ * - Si saldo >= 0.05: redondea a 0.10
+ * - Si dígito anterior a 0.05 es par, redondea hacia abajo
+ * - Si es impar, redondea hacia arriba para que resultado sea par
  */
 export function applyRounding(amount) {
   const cents = Math.round((amount % 1) * 100);
   const integerPart = Math.floor(amount);
   
-  if (cents <= 4) {
-    return integerPart; // Redondea hacia abajo
-  } else if (cents <= 9) {
+  // Si los centavos son menores a 5, redondea hacia abajo (condonar)
+  if (cents < 5) {
+    return integerPart; // Cuota considerada como pagada
+  }
+  
+  // Si los centavos están entre 5-9, redondea hacia arriba a 0.10
+  if (cents >= 5 && cents <= 9) {
     return integerPart + 0.10; // Redondea hacia arriba a .10
+  }
+  
+  // Para centavos 10-99, aplicar redondeo de banquero
+  const decimalPart = Math.floor(cents / 10) * 10;
+  const remainder = cents % 10;
+  
+  if (remainder < 5) {
+    // Redondea hacia abajo al múltiplo de 10 anterior (redondeo de banquero)
+    return integerPart + (decimalPart / 100);
+  } else if (remainder > 5) {
+    // Redondea hacia arriba
+    return integerPart + ((decimalPart + 10) / 100);
   } else {
-    // cents está entre 10-94 o 95-99
-    const decimalPart = Math.floor(cents / 10) * 10;
-    const remainder = cents % 10;
-    
-    if (remainder <= 4) {
-      return integerPart + (decimalPart / 100);
-    } else {
-      return integerPart + ((decimalPart + 10) / 100);
-    }
+    // remainder === 5: Redondeo de banquero (al par más cercano)
+    const tenthDigit = Math.floor((decimalPart / 10) % 10);
+    const isEven = tenthDigit % 2 === 0;
+    return isEven 
+      ? integerPart + (decimalPart / 100)  // Mantiene decimal par
+      : integerPart + ((decimalPart + 10) / 100);  // Redondea hacia par
   }
 }
 
@@ -193,6 +208,28 @@ export async function registerPayment({
     installmentId,
     externalReference
   });
+
+  // Validar que exista una sesión de caja abierta antes de cualquier pago
+  if (!cashSessionId) {
+    throw new Error('Debe abrir una sesión de caja antes de registrar pagos');
+  }
+
+  const cashSession = await prisma.cashSession.findUnique({
+    where: { id: Number(cashSessionId) },
+    select: { id: true, isClosed: true, userId: true },
+  });
+
+  if (!cashSession) {
+    throw new Error('Sesión de caja no encontrada');
+  }
+
+  if (cashSession.isClosed) {
+    throw new Error('La sesión de caja está cerrada. Abra una nueva antes de registrar pagos');
+  }
+
+  if (cashSession.userId !== registeredByUserId) {
+    throw new Error('La sesión de caja abierta pertenece a otro usuario');
+  }
 
   // VERIFICAR DUPLICADOS: Para pagos de EFECTIVO, verificar si ya existe un pago reciente con los mismos datos
   if (paymentMethod === 'EFECTIVO' && installmentId) {

@@ -4,21 +4,41 @@ import axios from 'axios';
 import { apiGet, apiPost, apiDownload, apiFileUrl } from '../lib/api.js';
 import { formatDate } from '../lib/date.js';
 
-// Redondeo peruano a múltiplos de 0.10 para efectivo
+/**
+ * Redondeo de Banquero (Redondeo al Par Más Cercano)
+ * Si el dígito anterior al 0.05 es par, redondea hacia abajo
+ * Si es impar, redondea hacia arriba para que el resultado sea par
+ * Reglas:
+ * - Si saldo < 0.05: redondea a 0 (cuota considerada pagada)
+ * - Si saldo >= 0.05: redondea a 0.10
+ */
 function roundCash(amount) {
   const cents = Math.round((amount % 1) * 100);
   const integerPart = Math.floor(amount);
 
-  if (cents <= 4) return integerPart;
-  if (cents <= 9) return integerPart + 0.10;
+  // Si los centavos son menores a 5, redondea hacia abajo (condonar)
+  if (cents < 5) return integerPart;
 
+  // Si los centavos son >= 5, redondea hacia arriba a 0.10
+  if (cents >= 5 && cents <= 9) return integerPart + 0.10;
+
+  // Para centavos 10-99, aplicar redondeo de banquero
   const decimalPart = Math.floor(cents / 10) * 10;
   const remainder = cents % 10;
 
-  if (remainder <= 4) {
+  if (remainder < 5) {
+    // Redondea hacia abajo al múltiplo de 10 anterior (redondeo de banquero)
     return integerPart + (decimalPart / 100);
+  } else if (remainder > 5) {
+    // Redondea hacia arriba
+    return integerPart + ((decimalPart + 10) / 100);
+  } else {
+    // remainder === 5: Redondeo de banquero (al par más cercano)
+    const isEven = (decimalPart / 10) % 2 === 0;
+    return isEven 
+      ? integerPart + (decimalPart / 100)  // Mantiene decimal par
+      : integerPart + ((decimalPart + 10) / 100);  // Redondea hacia par
   }
-  return integerPart + ((decimalPart + 10) / 100);
 }
 
 export default function LoanDetail() {
@@ -514,7 +534,14 @@ export default function LoanDetail() {
   const toCents = (v) => Math.round(Number(v || 0) * 100);
   const remainingForInstallment = (amount, paid) => {
     const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
-    return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+    // Si saldo restante < 0.05 (5 centavos), se redondea a 0 y se considera pagado
+    // Si saldo restante >= 0.05, se redondea a 0.10 usando redondeo de banquero
+    if (remainingCents < 5) {
+      return 0; // Cuota considerada como pagada
+    }
+    // Convertir a decimal y redondear a múltiplo de 0.10
+    const remainingAmount = remainingCents / 100;
+    return Number(roundCash(remainingAmount).toFixed(2));
   };
 
   // Saldo restante por cuota = monto de la cuota menos lo pagado a esa cuota
@@ -532,9 +559,13 @@ export default function LoanDetail() {
     return loan.schedules.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
       const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
+      // Una cuota está pagada si el saldo restante es 0 (por redondeo de banquero)
+      // o si el monto pagado es >= al monto de la cuota
+      const isPaid = remainingInstallment === 0 || paid >= row.installmentAmount;
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2)),
+        isPaid: isPaid,
       };
     });
   })();

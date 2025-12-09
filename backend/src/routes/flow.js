@@ -44,6 +44,15 @@ router.post(
         return res.status(404).json({ error: 'Préstamo no encontrado' });
       }
 
+      // Validar que el usuario tenga una sesión de caja abierta
+      const cashSession = await prisma.cashSession.findFirst({
+        where: { userId, isClosed: false },
+      });
+
+      if (!cashSession) {
+        return res.status(400).json({ error: 'Debe abrir una sesión de caja antes de registrar pagos' });
+      }
+
       // Crear orden de pago en Flow
       const commerceOrder = `LOAN-${loanId}-${Date.now()}`;
       const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
@@ -60,7 +69,7 @@ router.post(
         urlConfirmation: `${baseUrl}/flow/webhook`,
         urlReturn: `${frontendUrl}/loans/${loanId}?from=flow`,
         paymentMethod: 9, // 9 = Todos los medios de pago
-        optional: { loanId, userId, installmentId: installmentId || null, commerceOrder },
+        optional: { loanId, userId, installmentId: installmentId || null, cashSessionId: cashSession.id, commerceOrder },
       });
 
       console.log('✅ Orden Flow creada:', { flowOrder: flowPayment.flowOrder, commerceOrder });
@@ -72,6 +81,7 @@ router.post(
         userId,
         installmentId: installmentId || null,
         amount: Number(amount),
+        cashSessionId: cashSession.id,
       };
       console.log('📌 Información guardada en cache para flowOrder:', flowPayment.flowOrder);
 
@@ -113,26 +123,38 @@ router.get(
         // Primero intentar recuperar del optional
         let optional = status.optional;
         let installmentId = optional?.installmentId || null;
+        let cashSessionId = optional?.cashSessionId ? Number(optional.cashSessionId) : null;
+        let registeredByUserId = optional?.userId ? Number(optional.userId) : userId;
 
-        // Si no hay installmentId en optional, intentar desde cache
-        if (!installmentId && status.flowOrder && global.flowPaymentCache) {
+        // Si falta informaciÓn, intentar desde cache
+        if (status.flowOrder && global.flowPaymentCache) {
           const cached = global.flowPaymentCache[status.flowOrder];
           if (cached) {
             console.log('🔍 Encontrado en cache:', cached);
-            installmentId = cached.installmentId;
+            installmentId = installmentId || cached.installmentId || null;
             optional = optional || cached;
+            if (!cashSessionId && cached.cashSessionId) {
+              cashSessionId = Number(cached.cashSessionId);
+            }
+            if (!registeredByUserId && cached.userId) {
+              registeredByUserId = Number(cached.userId);
+            }
           } else {
             console.log('❌ No encontrado en cache para flowOrder:', status.flowOrder);
             console.log('📦 Cache disponible:', Object.keys(global.flowPaymentCache || {}));
           }
         }
 
-        console.log('📋 installmentId final:', installmentId);
+        console.log('📋 installmentId final:', installmentId, 'cashSessionId:', cashSessionId);
 
         if (optional && optional.loanId) {
           const loanId = Number(optional.loanId);
 
-          console.log('🎯 Registrando pago:', { loanId, userId, installmentId, flowOrder: status.flowOrder });
+          if (!cashSessionId) {
+            return res.status(400).json({ error: 'No hay sesión de caja abierta para registrar el pago de Flow' });
+          }
+
+          console.log('🎯 Registrando pago:', { loanId, registeredByUserId, installmentId, cashSessionId, flowOrder: status.flowOrder });
 
           // Verificar si ya existe un pago con esta referencia
           const existingPayment = await prisma.payment.findFirst({
@@ -149,8 +171,8 @@ router.get(
               loanId,
               amount: status.amount,
               paymentMethod: 'FLOW',
-              registeredByUserId: userId,
-              cashSessionId: null,
+              registeredByUserId,
+              cashSessionId,
               installmentId,
               externalReference: status.flowOrder.toString(),
             });
@@ -250,6 +272,7 @@ router.post(
         let optional = paymentStatus.optional;
         let installmentId = optional?.installmentId || null;
         let userId = optional?.userId ? Number(optional.userId) : null;
+        let cashSessionId = optional?.cashSessionId ? Number(optional.cashSessionId) : null;
 
         // Si no hay datos en optional, intentar desde cache
         if ((!optional || !optional.loanId) && paymentStatus.flowOrder && global.flowPaymentCache) {
@@ -258,6 +281,7 @@ router.post(
             console.log('🔍 Encontrado en cache (webhook):', cached);
             installmentId = cached.installmentId;
             userId = cached.userId;
+            cashSessionId = cashSessionId || (cached.cashSessionId ? Number(cached.cashSessionId) : null);
             optional = cached;
           } else {
             console.log('❌ No encontrado en cache para flowOrder:', paymentStatus.flowOrder);
@@ -265,12 +289,12 @@ router.post(
           }
         }
 
-        console.log('📋 Datos del webhook:', { optional, installmentId, userId });
+        console.log('📋 Datos del webhook:', { optional, installmentId, userId, cashSessionId });
 
         if (optional && optional.loanId) {
           const loanId = Number(optional.loanId);
 
-          console.log('🎯 Webhook registrando:', { loanId, userId, installmentId, flowOrder: paymentStatus.flowOrder });
+          console.log('🎯 Webhook registrando:', { loanId, userId, installmentId, cashSessionId, flowOrder: paymentStatus.flowOrder });
 
           // Verificar si ya existe un pago con esta referencia
           const existingPayment = await prisma.payment.findFirst({
@@ -282,13 +306,23 @@ router.post(
           if (!existingPayment) {
             console.log('📦 Registrando pago desde webhook...');
             
+            if (!cashSessionId) {
+              console.error('❌ No hay sesión de caja abierta asociada para registrar el pago de Flow');
+              return res.status(200).send('OK');
+            }
+
+            if (!userId) {
+              console.error('❌ No se pudo identificar al usuario que inició el pago en Flow');
+              return res.status(200).send('OK');
+            }
+            
             // Registrar el pago en el sistema
             const payment = await registerPayment({
               loanId,
               amount: paymentStatus.amount,
               paymentMethod: 'FLOW',
               registeredByUserId: userId,
-              cashSessionId: null, // Flow no se asocia a sesión de caja
+              cashSessionId,
               installmentId,
               externalReference: paymentStatus.flowOrder.toString(),
             });
@@ -355,6 +389,23 @@ router.post(
       }
 
       const loanId = Number(optional.loanId);
+      const registeredByUserId = optional.userId ? Number(optional.userId) : userId;
+
+      let cashSessionId = optional.cashSessionId ? Number(optional.cashSessionId) : null;
+      if (!cashSessionId) {
+        const session = await prisma.cashSession.findFirst({
+          where: { userId: registeredByUserId, isClosed: false },
+        });
+        if (session) {
+          cashSessionId = session.id;
+        }
+      }
+
+      if (!cashSessionId) {
+        return res.status(400).json({
+          error: 'Debe abrir una sesión de caja antes de registrar pagos de Flow',
+        });
+      }
 
       // Verificar si ya existe un pago con esta referencia
       const existingPayment = await prisma.payment.findFirst({
@@ -375,8 +426,8 @@ router.post(
         loanId,
         amount: paymentStatus.amount,
         paymentMethod: 'FLOW',
-        registeredByUserId: userId,
-        cashSessionId: null,
+        registeredByUserId,
+        cashSessionId,
         externalReference: paymentStatus.flowOrder.toString(),
       });
 

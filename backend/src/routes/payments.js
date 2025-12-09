@@ -21,7 +21,7 @@ router.post(
   body('loanId').isInt({ gt: 0 }),
   body('amount').isFloat({ gt: 0 }),
   body('paymentMethod').isIn(['EFECTIVO', 'BILLETERA_DIGITAL', 'TARJETA_DEBITO', 'TARJETA', 'YAPE', 'PLIN', 'FLOW', 'OTRO']),
-  body('cashSessionId').optional().isInt({ gt: 0 }),
+  body('cashSessionId').isInt({ gt: 0 }),
   body('installmentId').optional().isInt({ gt: 0 }),
   body('externalReference').optional().isString(),
   handleValidation,
@@ -49,7 +49,7 @@ router.post(
         amount: Number(amount),
         paymentMethod,
         registeredByUserId,
-        cashSessionId: cashSessionId ? Number(cashSessionId) : null,
+        cashSessionId: Number(cashSessionId),
         installmentId: installmentId ? Number(installmentId) : null,
         externalReference,
       });

@@ -169,7 +169,37 @@ export default function LoanDetail() {
   const toCents = (v) => Math.round(Number(v || 0) * 100);
   const remainingForInstallment = (amount, paid) => {
     const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
-    return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+    // Si saldo restante < 0.05 (5 centavos), se redondea a 0 y se considera pagado
+    // Si saldo restante >= 0.05, se redondea a 0.10 usando redondeo de banquero
+    if (remainingCents < 5) {
+      return 0; // Cuota considerada como pagada
+    }
+    // Para centavos >= 5, aplicar redondeo de banquero
+    const remainingAmount = remainingCents / 100;
+    const integerPart = Math.floor(remainingAmount);
+    const cents = remainingCents % 100;
+    
+    // Si centavos 5-9, redondea a 0.10
+    if (cents >= 5 && cents <= 9) {
+      return integerPart + 0.10;
+    }
+    
+    // Para centavos 10-99, aplicar redondeo de banquero
+    const decimalPart = Math.floor(cents / 10) * 10;
+    const remainder = cents % 10;
+    
+    if (remainder < 5) {
+      return Number((integerPart + (decimalPart / 100)).toFixed(2));
+    } else if (remainder > 5) {
+      return Number((integerPart + ((decimalPart + 10) / 100)).toFixed(2));
+    } else {
+      // remainder === 5: Redondeo de banquero (al par más cercano)
+      const tenthDigit = Math.floor((decimalPart / 10) % 10);
+      const isEven = tenthDigit % 2 === 0;
+      return isEven 
+        ? Number((integerPart + (decimalPart / 100)).toFixed(2))  // Mantiene decimal par
+        : Number((integerPart + ((decimalPart + 10) / 100)).toFixed(2));  // Redondea hacia par
+    }
   };
 
   const scheduleWithRemaining = (() => {
@@ -186,10 +216,14 @@ export default function LoanDetail() {
     return loan.schedules.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
       const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
+      // Una cuota está pagada si el saldo restante es 0 (por redondeo de banquero)
+      // o si el monto pagado es >= al monto de la cuota
+      const isPaid = remainingInstallment === 0 || paid >= row.installmentAmount;
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2)),
         paidForThisInstallment: paid,
+        isPaid: isPaid,
       };
     });
   })();
@@ -263,8 +297,8 @@ export default function LoanDetail() {
               {scheduleWithRemaining.map((row) => {
                 const installmentAmount = Number(row.installmentAmount);
                 const paidForThisInstallment = Number(row.paidForThisInstallment || 0);
-                const isPaid = paidForThisInstallment >= installmentAmount;
-                const isPartiallyPaid = paidForThisInstallment > 0 && paidForThisInstallment < installmentAmount;
+                const isPaid = row.isPaid === true;
+                const isPartiallyPaid = paidForThisInstallment > 0 && !isPaid;
 
                 return (
                   <tr key={row.id}>
