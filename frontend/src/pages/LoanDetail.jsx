@@ -4,6 +4,23 @@ import axios from 'axios';
 import { apiGet, apiPost, apiDownload, apiFileUrl } from '../lib/api.js';
 import { formatDate } from '../lib/date.js';
 
+// Redondeo peruano a múltiplos de 0.10 para efectivo
+function roundCash(amount) {
+  const cents = Math.round((amount % 1) * 100);
+  const integerPart = Math.floor(amount);
+
+  if (cents <= 4) return integerPart;
+  if (cents <= 9) return integerPart + 0.10;
+
+  const decimalPart = Math.floor(cents / 10) * 10;
+  const remainder = cents % 10;
+
+  if (remainder <= 4) {
+    return integerPart + (decimalPart / 100);
+  }
+  return integerPart + ((decimalPart + 10) / 100);
+}
+
 export default function LoanDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -210,9 +227,10 @@ export default function LoanDetail() {
     console.log('paymentMethod:', paymentMethod);
     
     setSelectedInstallment(installment);
-    // Convertir a número antes de usar toFixed
+    // Convertir a número y redondear a múltiplos de 0.10 para efectivo
     const amount = parseFloat(installment.installmentAmount);
-    setPaymentAmount(amount.toFixed(2));
+    const initialAmount = roundCash(amount);
+    setPaymentAmount(initialAmount.toFixed(2));
     setShowPaymentModal(true);
     setError('');
     setSuccess('');
@@ -223,6 +241,16 @@ export default function LoanDetail() {
     setSelectedInstallment(null);
     setPaymentAmount('');
     setPaymentMethod('EFECTIVO');
+  }
+
+  function handlePaymentMethodChange(e) {
+    const method = e.target.value;
+    setPaymentMethod(method);
+    if (method === 'EFECTIVO') {
+      const raw = parseFloat(paymentAmount || baseInstallmentAmount || 0) || 0;
+      const rounded = roundCash(raw);
+      setPaymentAmount(rounded.toFixed(2));
+    }
   }
 
   async function handlePayment(e) {
@@ -240,6 +268,19 @@ export default function LoanDetail() {
     if (amount > maxAmount) {
       setError(`El monto no puede ser mayor a ${maxAmount.toFixed(2)}`);
       return;
+    }
+
+    if ((paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') && amount < 2) {
+      setError('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+      return;
+    }
+
+    // Aplicar redondeo automático para efectivo
+    const finalAmount = paymentMethod === 'EFECTIVO'
+      ? Number(roundCash(amount).toFixed(2))
+      : amount;
+    if (paymentMethod === 'EFECTIVO') {
+      setPaymentAmount(finalAmount.toFixed(2));
     }
 
     setProcessingPayment(true);
@@ -268,7 +309,7 @@ export default function LoanDetail() {
 
         const paymentPayload = {
           loanId: parseInt(id),
-          amount,
+          amount: finalAmount,
           paymentMethod,
           cashSessionId: cashSession?.id || null,
           installmentId: selectedInstallment.id,
@@ -306,6 +347,12 @@ export default function LoanDetail() {
   const totalPagado = statement?.totals?.totalPaid || 0;
   const pendiente = statement?.totals?.pendingTotal || 0;
 
+  const toCents = (v) => Math.round(Number(v || 0) * 100);
+  const remainingForInstallment = (amount, paid) => {
+    const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
+    return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+  };
+
   // Saldo restante por cuota = monto de la cuota menos lo pagado a esa cuota
   const scheduleWithRemaining = (() => {
     if (!loan?.schedules) return [];
@@ -320,7 +367,7 @@ export default function LoanDetail() {
     });
     return loan.schedules.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
-      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2)),
@@ -328,9 +375,15 @@ export default function LoanDetail() {
     });
   })();
 
+  const baseInstallmentAmount = selectedInstallment ? parseFloat(selectedInstallment.installmentAmount) || 0 : 0;
+  const lateFeeForSelected = selectedInstallment ? (selectedInstallment.lateFeeAmount || 0) : 0;
+  const displayInstallmentAmount = paymentMethod === 'EFECTIVO'
+    ? roundCash(baseInstallmentAmount)
+    : baseInstallmentAmount;
+  const displayTotalToPay = displayInstallmentAmount + lateFeeForSelected;
+
   return (
     <div className="section">
-      {error && <div className="badge badge-red" style={{ marginBottom: '1rem' }}>{error}</div>}
       {success && <div className="badge badge-green" style={{ marginBottom: '1rem' }}>{success}</div>}
 
       <div className="card mb-4">
@@ -488,14 +541,23 @@ export default function LoanDetail() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Registrar Pago - Cuota #{selectedInstallment.installmentNumber}</h3>
             
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
             <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '1rem' }}>
               <div><strong>Fecha de Vencimiento:</strong> {formatDate(selectedInstallment.dueDate)}</div>
-              <div><strong>Monto de Cuota:</strong> S/ {parseFloat(selectedInstallment.installmentAmount).toFixed(2)}</div>
+              <div>
+                <strong>Monto de Cuota{paymentMethod === 'EFECTIVO' ? ' (redondeado efectivo)' : ''}:</strong>{' '}
+                S/ {displayInstallmentAmount.toFixed(2)}
+              </div>
               <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #ddd' }}>
                 <strong>Mora:</strong> S/ {(selectedInstallment.lateFeeAmount || 0).toFixed(2)}
               </div>
               <div style={{ marginTop: '0.5rem', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
-                <strong>Total a Pagar:</strong> S/ {(parseFloat(selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0)).toFixed(2)}
+                <strong>Total a Pagar:</strong> S/ {displayTotalToPay.toFixed(2)}
               </div>
             </div>
 
@@ -521,7 +583,7 @@ export default function LoanDetail() {
                 <select
                   id="paymentMethod"
                   value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  onChange={handlePaymentMethodChange}
                   required
                   disabled={processingPayment}
                 >

@@ -21,11 +21,17 @@ export function buildSchedulePdf(doc, { client, loan, schedule, payments }) {
     );
   });
 
+  const toCents = (v) => Math.round(Number(v || 0) * 100);
+  const remainingForInstallment = (amount, paid) => {
+    const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
+    return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+  };
+
   const scheduleWithRemaining = (() => {
     if (!schedule) return [];
     return schedule.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
-      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2))

@@ -153,9 +153,14 @@ export default function NewLoan() {
 
   const previewScheduleWithRemaining = (() => {
     if (!preview?.schedule) return [];
+    const toCents = (v) => Math.round(Number(v || 0) * 100);
+    const remainingForInstallment = (amount) => {
+      const remainingCents = Math.max(0, toCents(amount));
+      return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+    };
     return preview.schedule.map((row) => ({
       ...row,
-      remainingInstallment: Number(row.installmentAmount || 0),
+      remainingInstallment: remainingForInstallment(row.installmentAmount),
     }));
   })();
 

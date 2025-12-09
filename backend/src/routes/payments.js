@@ -30,6 +30,20 @@ router.post(
       const { loanId, amount, paymentMethod, cashSessionId, installmentId, externalReference } = req.body;
       const registeredByUserId = req.user.id;
 
+      if (
+        paymentMethod === 'EFECTIVO' &&
+        (Math.round(Number(amount) * 100) % 10 !== 0)
+      ) {
+        return res.status(400).json({ error: 'Para pagos en efectivo, solo se permiten montos en múltiplos de S/ 0.10' });
+      }
+
+      if (
+        (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') &&
+        Number(amount) < 2
+      ) {
+        return res.status(400).json({ error: 'El monto mínimo para billetera digital o tarjeta débito es S/ 2.00' });
+      }
+
       const payment = await registerPayment({
         loanId: Number(loanId),
         amount: Number(amount),

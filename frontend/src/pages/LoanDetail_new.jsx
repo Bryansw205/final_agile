@@ -166,6 +166,12 @@ export default function LoanDetail() {
   const totalPagado = statement?.totals?.totalPaid || 0;
   const pendiente = statement?.totals?.pendingTotal || 0;
 
+  const toCents = (v) => Math.round(Number(v || 0) * 100);
+  const remainingForInstallment = (amount, paid) => {
+    const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
+    return remainingCents <= 4 ? 0 : Number((remainingCents / 100).toFixed(2));
+  };
+
   const scheduleWithRemaining = (() => {
     if (!loan?.schedules) return [];
     const paidByInstallment = new Map();
@@ -179,7 +185,7 @@ export default function LoanDetail() {
     });
     return loan.schedules.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
-      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2)),

@@ -274,6 +274,21 @@ export async function registerPayment({
     throw new Error('El monto del pago debe ser mayor a cero');
   }
 
+  // Validar incrementos en efectivo: solo múltiplos de 0.10
+  if (paymentMethod === 'EFECTIVO') {
+    const cents = Math.round(paymentAmount * 100);
+    if (cents % 10 !== 0) {
+      throw new Error('Para pagos en efectivo, solo se permiten montos en múltiplos de S/ 0.10');
+    }
+  }
+
+  if (
+    (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') &&
+    paymentAmount < 2
+  ) {
+    throw new Error('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+  }
+
   // Distribuir el pago: primero mora, luego interés, luego capital
   let remaining = paymentAmount;
   let lateFeePaid = 0;

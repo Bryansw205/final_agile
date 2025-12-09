@@ -30,6 +30,10 @@ router.post(
       const { loanId, amount, email, installmentId } = req.body;
       const userId = req.user.id;
 
+      if (Number(amount) < 2) {
+        return res.status(400).json({ error: 'El monto mínimo para billetera digital o tarjeta débito es S/ 2.00' });
+      }
+
       // Verificar que el préstamo existe
       const loan = await prisma.loan.findUnique({
         where: { id: Number(loanId) },
