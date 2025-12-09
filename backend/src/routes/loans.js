@@ -205,13 +205,20 @@ router.get(
   async (req, res, next) => {
     try {
       const id = Number(req.params.id);
-      const loan = await prisma.loan.findUnique({ where: { id }, include: { client: true, schedules: { orderBy: { installmentNumber: 'asc' } } } });
+      const loan = await prisma.loan.findUnique({ 
+        where: { id }, 
+        include: { 
+          client: true, 
+          schedules: { orderBy: { installmentNumber: 'asc' } },
+          payments: { orderBy: { paymentDate: 'asc' } }
+        } 
+      });
       if (!loan) return res.status(404).json({ error: 'PrÃ©stamo no encontrado' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="cronograma_loan_${loan.id}.pdf"`);
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
       doc.pipe(res);
-      buildSchedulePdf(doc, { client: loan.client, loan, schedule: loan.schedules });
+      buildSchedulePdf(doc, { client: loan.client, loan, schedule: loan.schedules, payments: loan.payments });
       doc.end();
     } catch (e) { next(e); }
   }

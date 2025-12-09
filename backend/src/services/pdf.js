@@ -8,8 +8,30 @@ dayjs.extend(timezone);
 const TZ = 'America/Lima';
 
 // Escribe el contenido del PDF en un documento existente (no hace pipe ni end)
-export function buildSchedulePdf(doc, { client, loan, schedule }) {
+export function buildSchedulePdf(doc, { client, loan, schedule, payments }) {
   const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right; // ~515 para A4 con margen 40
+
+  const paidByInstallment = new Map();
+  (payments || []).forEach((p) => {
+    if (!p.installmentId) return;
+    const paidPortion = Number(p.principalPaid || 0) + Number(p.interestPaid || 0);
+    paidByInstallment.set(
+      p.installmentId,
+      (paidByInstallment.get(p.installmentId) || 0) + paidPortion
+    );
+  });
+
+  const scheduleWithRemaining = (() => {
+    if (!schedule) return [];
+    return schedule.map((row) => {
+      const paid = paidByInstallment.get(row.id) || 0;
+      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      return {
+        ...row,
+        remainingInstallment: Number(remainingInstallment.toFixed(2))
+      };
+    });
+  })();
 
   doc.fontSize(16).text('Cronograma de Pagos', { align: 'center' });
   doc.moveDown();
@@ -24,11 +46,12 @@ export function buildSchedulePdf(doc, { client, loan, schedule }) {
   // Definir columnas con anchos que sumen contentWidth
   const columns = [
     { key: 'n', title: 'Cuota', width: 50, align: 'left' },
-    { key: 'fecha', title: 'Fecha', width: 90, align: 'left' },
-    { key: 'cuota', title: 'Cuota (S/)', width: 95, align: 'right' },
-    { key: 'interes', title: 'Interés', width: 90, align: 'right' },
-    { key: 'capital', title: 'Capital', width: 90, align: 'right' },
-    { key: 'saldo', title: 'Saldo', width: contentWidth - (50 + 90 + 95 + 90 + 90), align: 'right' },
+    { key: 'fecha', title: 'Fecha', width: 85, align: 'left' },
+    { key: 'cuota', title: 'Cuota (S/)', width: 90, align: 'right' },
+    { key: 'interes', title: 'Interés', width: 80, align: 'right' },
+    { key: 'capital', title: 'Capital', width: 80, align: 'right' },
+    { key: 'saldo', title: 'Saldo', width: 70, align: 'right' },
+    { key: 'saldoRestante', title: 'Saldo restante', width: contentWidth - (50 + 85 + 90 + 80 + 80 + 70), align: 'right' },
   ];
 
   const rowHeight = 18;
@@ -57,6 +80,7 @@ export function buildSchedulePdf(doc, { client, loan, schedule }) {
       { key: 'interes', value: formatCurrency(r.interestAmount) },
       { key: 'capital', value: formatCurrency(r.principalAmount) },
       { key: 'saldo', value: formatCurrency(r.remainingBalance) },
+      { key: 'saldoRestante', value: formatCurrency(r.remainingInstallment) },
     ];
     cells.forEach((cell, idx) => {
       const col = columns[idx];
@@ -68,7 +92,7 @@ export function buildSchedulePdf(doc, { client, loan, schedule }) {
 
   const bottomY = doc.page.height - doc.page.margins.bottom;
   drawHeader();
-  for (const row of schedule) {
+  for (const row of scheduleWithRemaining) {
     if (y + rowHeight > bottomY) {
       doc.addPage();
       y = doc.page.margins.top;

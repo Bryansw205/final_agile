@@ -151,6 +151,14 @@ export default function NewLoan() {
     }
   };
 
+  const previewScheduleWithRemaining = (() => {
+    if (!preview?.schedule) return [];
+    return preview.schedule.map((row) => ({
+      ...row,
+      remainingInstallment: Number(row.installmentAmount || 0),
+    }));
+  })();
+
   return (
     <div className="section">
       <div className="card">
@@ -356,10 +364,11 @@ export default function NewLoan() {
                 <th>Interés</th>
                 <th>Capital</th>
                 <th>Saldo</th>
+                <th>Saldo restante</th>
               </tr>
             </thead>
             <tbody>
-              {preview.schedule.map((row) => (
+              {previewScheduleWithRemaining.map((row) => (
                 <tr key={row.installmentNumber}>
                   <td>{row.installmentNumber}</td>
                   <td>{formatDate(row.dueDate)}</td>
@@ -367,6 +376,7 @@ export default function NewLoan() {
                   <td>{Number(row.interestAmount).toFixed(2)}</td>
                   <td>{Number(row.principalAmount).toFixed(2)}</td>
                   <td>{Number(row.remainingBalance).toFixed(2)}</td>
+                  <td>{Number(row.remainingInstallment || 0).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

@@ -166,6 +166,28 @@ export default function LoanDetail() {
   const totalPagado = statement?.totals?.totalPaid || 0;
   const pendiente = statement?.totals?.pendingTotal || 0;
 
+  const scheduleWithRemaining = (() => {
+    if (!loan?.schedules) return [];
+    const paidByInstallment = new Map();
+    (statement?.payments || []).forEach((p) => {
+      if (!p.installmentId) return;
+      const paidPortion = Number(p.principalPaid || 0) + Number(p.interestPaid || 0);
+      paidByInstallment.set(
+        p.installmentId,
+        (paidByInstallment.get(p.installmentId) || 0) + paidPortion
+      );
+    });
+    return loan.schedules.map((row) => {
+      const paid = paidByInstallment.get(row.id) || 0;
+      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      return {
+        ...row,
+        remainingInstallment: Number(remainingInstallment.toFixed(2)),
+        paidForThisInstallment: paid,
+      };
+    });
+  })();
+
   return (
     <div className="section">
       {error && <div className="badge badge-red" style={{ marginBottom: '1rem' }}>{error}</div>}
@@ -226,18 +248,15 @@ export default function LoanDetail() {
                 <th>Interés</th>
                 <th>Capital</th>
                 <th>Saldo</th>
+                <th>Saldo restante</th>
                 <th>Estado</th>
                 <th>Acción</th>
               </tr>
             </thead>
             <tbody>
-              {loan.schedules.map((row) => {
-                // Calcular cuánto se ha pagado de esta cuota
-                const paidForThisInstallment = statement?.payments
-                  ?.filter(p => new Date(p.paymentDate) <= new Date(row.dueDate))
-                  ?.reduce((sum, p) => sum + p.amount, 0) || 0;
-
+              {scheduleWithRemaining.map((row) => {
                 const installmentAmount = Number(row.installmentAmount);
+                const paidForThisInstallment = Number(row.paidForThisInstallment || 0);
                 const isPaid = paidForThisInstallment >= installmentAmount;
                 const isPartiallyPaid = paidForThisInstallment > 0 && paidForThisInstallment < installmentAmount;
 
@@ -249,6 +268,7 @@ export default function LoanDetail() {
                     <td>S/ {Number(row.interestAmount).toFixed(2)}</td>
                     <td>S/ {Number(row.principalAmount).toFixed(2)}</td>
                     <td>S/ {Number(row.remainingBalance).toFixed(2)}</td>
+                    <td>S/ {Number(row.remainingInstallment || 0).toFixed(2)}</td>
                     <td>
                       {isPaid ? (
                         <span className="badge badge-green">Pagado</span>

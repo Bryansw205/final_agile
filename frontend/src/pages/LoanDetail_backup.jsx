@@ -86,6 +86,27 @@ export default function LoanDetail() {
   const totalPagado = statement?.totals?.totalPaid || 0;
   const pendiente = statement?.totals?.pendingTotal || 0;
 
+  const scheduleWithRemaining = (() => {
+    if (!loan?.schedules) return [];
+    const paidByInstallment = new Map();
+    (statement?.payments || []).forEach((p) => {
+      if (!p.installmentId) return;
+      const paidPortion = Number(p.principalPaid || 0) + Number(p.interestPaid || 0);
+      paidByInstallment.set(
+        p.installmentId,
+        (paidByInstallment.get(p.installmentId) || 0) + paidPortion
+      );
+    });
+    return loan.schedules.map((row) => {
+      const paid = paidByInstallment.get(row.id) || 0;
+      const remainingInstallment = Math.max(0, Number(row.installmentAmount || 0) - paid);
+      return {
+        ...row,
+        remainingInstallment: Number(remainingInstallment.toFixed(2)),
+      };
+    });
+  })();
+
   return (
     <div className="section">
       {error && <div className="badge badge-red mb-3">{error}</div>}
@@ -264,10 +285,11 @@ export default function LoanDetail() {
               <th>Interés</th>
               <th>Capital</th>
               <th>Saldo</th>
+              <th>Saldo restante</th>
             </tr>
           </thead>
           <tbody>
-            {loan.schedules.map((row) => (
+            {scheduleWithRemaining.map((row) => (
               <tr key={row.id}>
                 <td>{row.installmentNumber}</td>
                 <td>{formatDate(row.dueDate)}</td>
@@ -275,6 +297,7 @@ export default function LoanDetail() {
                 <td>{Number(row.interestAmount).toFixed(2)}</td>
                 <td>{Number(row.principalAmount).toFixed(2)}</td>
                 <td>{Number(row.remainingBalance).toFixed(2)}</td>
+                <td>{Number(row.remainingInstallment || 0).toFixed(2)}</td>
               </tr>
             ))}
           </tbody>
@@ -315,4 +338,3 @@ export default function LoanDetail() {
     </div>
   );
 }
-
