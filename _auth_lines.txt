@@ -1,0 +1,34 @@
+1	import { Router } from 'express';
+2	import { body } from 'express-validator';
+3	import { handleValidation } from '../middleware/validate.js';
+4	import { PrismaClient } from '@prisma/client';
+5	import bcrypt from 'bcryptjs';
+6	import { signToken } from '../middleware/auth.js';
+7	
+8	const prisma = new PrismaClient();
+9	const router = Router();
+10	
+11	router.post(
+12	  '/login',
+13	  body('identifier').optional().isString(),
+14	  body('email').optional().isEmail(),
+15	  body('password').isString().isLength({ min: 6 }),
+16	  handleValidation,
+17	  async (req, res, next) => {
+18	    try {
+19	      const { email, password } = req.body;
+20	      const user = await prisma.user.findUnique({ where: { email } });
+21	      if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+22	      const ok = await bcrypt.compare(password, user.passwordHash);
+23	      if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+24	      const token = signToken({ sub: user.id, email: user.email, username: user.username, role: user.role });
+25	      res.json({ token, user: { id: user.id, email: user.email, role: user.role } });
+26	    } catch (e) {
+27	      next(e);
+28	    }
+29	  }
+30	);
+31	
+32	export default router;
+33	
+34	

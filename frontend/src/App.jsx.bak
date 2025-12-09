@@ -1,0 +1,47 @@
+import React from 'react';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+
+export default function App() {
+  const navigate = useNavigate();
+  const [hasLogo, setHasLogo] = React.useState(true);
+
+  React.useEffect(() => {
+    const img = new Image();
+    img.onload = () => setHasLogo(true);
+    img.onerror = () => setHasLogo(false);
+    img.src = '/logo.png';
+  }, []);
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
+
+  return (
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          {hasLogo ? (
+            <img className="brand-logo" src="/logo.png" alt="Logo" />
+          ) : (
+            <div className="brand-badge">GP</div>
+          )}
+          Gestión de Préstamos
+        </div>
+        <nav className="nav">
+          <NavLink to="/" end className={({isActive})=> isActive? 'active' : ''}>Nuevo Préstamo</NavLink>
+          <NavLink to="/clients" className={({isActive})=> isActive? 'active' : ''}>Clientes</NavLink>
+        </nav>
+        <div className="push-bottom">
+          <button className="btn" onClick={logout}>Salir</button>
+        </div>
+      </aside>
+      <main className="content">
+        <div className="topbar">
+          <h1 className="muted">Panel</h1>
+        </div>
+        <Outlet />
+      </main>
+    </div>
+  );
+}
