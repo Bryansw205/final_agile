@@ -292,6 +292,7 @@ export async function registerPayment({
   const pendingInterest = round2(totalInterest - loan.payments.reduce((sum, p) => sum + Number(p.interestPaid), 0));
   const pendingPrincipal = round2(Number(loan.principal) - loan.payments.reduce((sum, p) => sum + Number(p.principalPaid), 0));
   const pendingLateFee = round2(totalLateFee - loan.payments.reduce((sum, p) => sum + Number(p.lateFeePaid), 0));
+  const pendingTotal = round2(pendingDebt + pendingLateFee);
 
   if (pendingDebt <= 0) {
     throw new Error('El préstamo ya está completamente pagado');
@@ -309,6 +310,10 @@ export async function registerPayment({
 
   if (paymentAmount <= 0) {
     throw new Error('El monto del pago debe ser mayor a cero');
+  }
+
+  if (paymentAmount > pendingTotal) {
+    throw new Error(`El monto del pago supera la deuda pendiente (máximo S/ ${pendingTotal.toFixed(2)})`);
   }
 
   // Validar incrementos en efectivo: solo múltiplos de 0.10

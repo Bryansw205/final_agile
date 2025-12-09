@@ -183,7 +183,12 @@ export default function LoanDetail() {
             // Recargar datos
             setLoan(loanData);
             setStatement(statementData.data);
-            setCashSession(null); // Reset cash session
+            try {
+              const sessionResponse = await apiGet('/cash-sessions/current');
+              setCashSession(sessionResponse.session);
+            } catch (sessionErr) {
+              console.error('No se pudo actualizar la sesión de caja después de Flow:', sessionErr);
+            }
           }
         } catch (err) {
           if (attempts % 30 === 0) {
@@ -325,10 +330,16 @@ export default function LoanDetail() {
     console.log('handleOpenPaymentModal called', installment);
     console.log('cashSession:', cashSession);
     console.log('paymentMethod:', paymentMethod);
+
+    if (!cashSession) {
+      setError('Debe abrir una sesión de caja antes de registrar pagos');
+      return;
+    }
     
     setSelectedInstallment(installment);
-    // Convertir a número y redondear a múltiplos de 0.10 para efectivo
-    const amount = parseFloat(installment.installmentAmount);
+    // Convertir a número y redondear a múltiplos de 0.10 para efectivo tomando el saldo pendiente
+    const remaining = parseFloat(installment.remainingInstallment ?? installment.installmentAmount);
+    const amount = isNaN(remaining) ? 0 : remaining;
     const initialAmount = roundCash(amount);
     setPaymentAmount(initialAmount.toFixed(2));
     setShowPaymentModal(true);
@@ -431,7 +442,8 @@ export default function LoanDetail() {
       return;
     }
 
-    const maxAmount = parseFloat(selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0);
+    const remainingBase = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0;
+    const maxAmount = remainingBase + (selectedInstallment.lateFeeAmount || 0);
     if (amount > maxAmount) {
       setError(`El monto no puede ser mayor a ${maxAmount.toFixed(2)}`);
       return;
@@ -439,6 +451,11 @@ export default function LoanDetail() {
 
     if ((paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') && amount < 2) {
       setError('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+      return;
+    }
+
+    if (!cashSession) {
+      setError('Debe abrir una sesión de caja antes de registrar pagos');
       return;
     }
 
@@ -468,12 +485,6 @@ export default function LoanDetail() {
         window.location.href = flowResponse.paymentUrl;
       } else {
         // Pago con efectivo
-        if (paymentMethod === 'EFECTIVO' && !cashSession) {
-          setError('Debe abrir una sesión de caja para pagos en efectivo');
-          setProcessingPayment(false);
-          return;
-        }
-
         const paymentPayload = {
           loanId: parseInt(id),
           amount: finalAmount,
@@ -570,7 +581,9 @@ export default function LoanDetail() {
     });
   })();
 
-  const baseInstallmentAmount = selectedInstallment ? parseFloat(selectedInstallment.installmentAmount) || 0 : 0;
+  const baseInstallmentAmount = selectedInstallment
+    ? parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0
+    : 0;
   const lateFeeForSelected = selectedInstallment ? (selectedInstallment.lateFeeAmount || 0) : 0;
   const displayInstallmentAmount = paymentMethod === 'EFECTIVO'
     ? roundCash(baseInstallmentAmount)
@@ -580,6 +593,11 @@ export default function LoanDetail() {
   return (
     <div className="section">
       {success && <div className="badge badge-green" style={{ marginBottom: '1rem' }}>{success}</div>}
+      {!cashSession && (
+        <div className="badge badge-yellow" style={{ marginBottom: '1rem' }}>
+          ⚠️ Debe abrir una sesión de caja antes de registrar pagos
+        </div>
+      )}
 
       <div className="card mb-4">
         <div className="mb-3">
@@ -675,7 +693,7 @@ export default function LoanDetail() {
                         <button
                           className="btn btn-sm"
                           onClick={() => handleOpenPaymentModal(row)}
-                          disabled={processingPayment}
+                          disabled={processingPayment || !cashSession}
                         >
                           Pagar
                         </button>
@@ -765,12 +783,17 @@ export default function LoanDetail() {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   step="0.01"
-                  max={parseFloat(selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0)}
+                  max={(parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0)).toFixed(2)}
                   min="0.01"
                   required
                   disabled={processingPayment}
                 />
-                <small>Máximo: S/ {(parseFloat(selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0)).toFixed(2)}</small>
+                <small>
+                  Máximo: S/ {(
+                    parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) +
+                    (selectedInstallment.lateFeeAmount || 0)
+                  ).toFixed(2)}
+                </small>
               </div>
 
               <div className="form-group">
@@ -788,9 +811,9 @@ export default function LoanDetail() {
                 </select>
               </div>
 
-              {paymentMethod === 'EFECTIVO' && !cashSession && (
+              {!cashSession && (
                 <div className="badge badge-yellow" style={{ marginBottom: '1rem' }}>
-                  ⚠️ Debe abrir una sesión de caja para registrar pagos en efectivo
+                  ⚠️ Debe abrir una sesión de caja para registrar pagos
                 </div>
               )}
 
@@ -818,7 +841,7 @@ export default function LoanDetail() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={processingPayment || (paymentMethod === 'EFECTIVO' && !cashSession)}
+                  disabled={processingPayment || !cashSession}
                   style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
                 >
                   {processingPayment ? '⏳ Procesando...' : (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow' : 'Registrar Pago'}
