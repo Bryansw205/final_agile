@@ -370,23 +370,24 @@ export function buildCashSessionReport(doc, session) {
     doc.moveDown(0.5);
     
     // Encabezado de tabla
+    const gutter = 10;
     const columns = [
       { key: 'hora', title: 'Hora', width: 60 },
-      { key: 'cliente', title: 'Cliente', width: 120 },
-      { key: 'metodo', title: 'Método', width: 60 },
-      { key: 'monto', title: 'Monto', width: 80, align: 'right' },
-      { key: 'recibo', title: 'N° Recibo', width: contentWidth - 320 },
+      { key: 'cliente', title: 'Cliente', width: 180 },
+      { key: 'metodo', title: 'Método', width: 90 },
+      { key: 'monto', title: 'Monto', width: 90, align: 'right' },
+      { key: 'recibo', title: 'N° Recibo', width: contentWidth - (60 + 180 + 90 + 90 + gutter * 3) },
     ];
     
-    const rowHeight = 15;
+    const rowHeight = 22;
     let tableY = doc.y;
     
     // Dibujar encabezado
     doc.font('Helvetica-Bold');
     let x = doc.page.margins.left;
     columns.forEach(col => {
-      doc.text(col.title, x, tableY, { width: col.width, align: col.align || 'left' });
-      x += col.width;
+      doc.text(col.title, x + 4, tableY, { width: col.width - 8, align: col.align || 'left' });
+      x += col.width + gutter;
     });
     tableY += rowHeight;
     doc.moveTo(doc.page.margins.left, tableY).lineTo(doc.page.width - doc.page.margins.right, tableY).stroke();
@@ -405,7 +406,7 @@ export function buildCashSessionReport(doc, session) {
         x = doc.page.margins.left;
         columns.forEach(col => {
           doc.text(col.title, x, tableY, { width: col.width, align: col.align || 'left' });
-          x += col.width;
+          x += col.width + gutter;
         });
         tableY += rowHeight;
         doc.moveTo(doc.page.margins.left, tableY).lineTo(doc.page.width - doc.page.margins.right, tableY).stroke();
@@ -417,15 +418,17 @@ export function buildCashSessionReport(doc, session) {
       const hora = dayjs.tz(payment.paymentDate, TZ).format('HH:mm');
       const cliente = `${payment.loan.client.firstName} ${payment.loan.client.lastName}`;
       
-      doc.text(hora, x, tableY, { width: columns[0].width });
-      x += columns[0].width;
-      doc.text(cliente, x, tableY, { width: columns[1].width });
-      x += columns[1].width;
-      doc.text(payment.paymentMethod, x, tableY, { width: columns[2].width });
-      x += columns[2].width;
-      doc.text(formatCurrency(payment.amount), x, tableY, { width: columns[3].width, align: 'right' });
-      x += columns[3].width;
-      doc.text(payment.receiptNumber, x, tableY, { width: columns[4].width });
+      const cellY = tableY + 6;
+      const pad = 4;
+      doc.text(hora, x + pad, cellY, { width: columns[0].width - pad * 2 });
+      x += columns[0].width + gutter;
+      doc.text(cliente, x + pad, cellY, { width: columns[1].width - pad * 2 });
+      x += columns[1].width + gutter;
+      doc.text(payment.paymentMethod, x + pad, cellY, { width: columns[2].width - pad * 2, align: 'left' });
+      x += columns[2].width + gutter;
+      doc.text(formatCurrency(payment.amount), x + pad, cellY, { width: columns[3].width - pad * 2, align: 'right' });
+      x += columns[3].width + gutter;
+      doc.text(payment.receiptNumber, x + pad, cellY, { width: columns[4].width - pad * 2 });
       
       tableY += rowHeight;
     }

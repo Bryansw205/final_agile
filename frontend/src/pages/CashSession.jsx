@@ -7,9 +7,11 @@ export default function Payments() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     loadCurrentSession();
+    loadHistory();
   }, []);
 
   async function loadCurrentSession() {
@@ -21,6 +23,15 @@ export default function Payments() {
       console.error('Error cargando sesión:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const data = await apiGet('/cash-sessions/history/list?limit=50');
+      setHistory(data.sessions || []);
+    } catch (err) {
+      console.error('Error cargando historial:', err);
     }
   }
 
@@ -37,6 +48,7 @@ export default function Payments() {
       setCashSession(data.session);
       setOpeningBalance('');
       setSuccess('Sesión de caja abierta correctamente');
+      loadHistory();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -58,6 +70,7 @@ export default function Payments() {
       });
       setCashSession(data.session);
       setSuccess('Sesión de caja cerrada correctamente');
+      loadHistory();
       
       // Descargar reporte
       setTimeout(() => {
@@ -301,6 +314,47 @@ export default function Payments() {
           background-color: #f8f9fa;
         }
       `}</style>
+
+      {history && history.length > 0 && (
+        <div className="card" style={{ marginTop: '2rem' }}>
+          <h2>Historial de Cajas Cerradas</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Usuario</th>
+                <th>Apertura</th>
+                <th>Cierre</th>
+                <th>Saldo Inicial</th>
+                <th>Saldo Cierre</th>
+                <th>Diferencia</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.id}</td>
+                  <td>{s.user?.username || '-'}</td>
+                  <td>{new Date(s.openedAt).toLocaleString('es-PE')}</td>
+                  <td>{s.closedAt ? new Date(s.closedAt).toLocaleString('es-PE') : '-'}</td>
+                  <td>S/ {Number(s.openingBalance).toFixed(2)}</td>
+                  <td>{s.closingBalance !== null ? `S/ ${Number(s.closingBalance).toFixed(2)}` : '-'}</td>
+                  <td>{s.difference !== null ? `S/ ${Number(s.difference).toFixed(2)}` : '-'}</td>
+                  <td>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => apiDownload(`/cash-sessions/${s.id}/report`, `cierre-caja-${s.id}.pdf`)}
+                    >
+                      Descargar PDF
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
