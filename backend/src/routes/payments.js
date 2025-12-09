@@ -171,12 +171,23 @@ router.get(
         return res.status(404).json({ error: 'Pago no encontrado' });
       }
 
+      const type = (req.query.type || 'boleta').toString().toLowerCase();
+      if (!['boleta', 'factura'].includes(type)) {
+        return res.status(400).json({ error: 'Tipo de comprobante inválido' });
+      }
+      const invoiceInfo = {
+        type,
+        customerRuc: req.query.customerRuc || '',
+        customerName: req.query.customerName || '',
+        customerAddress: req.query.customerAddress || '',
+      };
+
       const doc = createPdfDocument();
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=comprobante-${payment.receiptNumber}.pdf`);
       
       doc.pipe(res);
-      buildPaymentReceipt(doc, payment);
+      buildPaymentReceipt(doc, payment, invoiceInfo);
       doc.end();
     } catch (error) {
       next(error);

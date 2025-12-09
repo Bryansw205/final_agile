@@ -7,6 +7,7 @@ import loanRoutes from './routes/loans.js';
 import paymentRoutes from './routes/payments.js';
 import cashSessionRoutes from './routes/cashSessions.js';
 import flowRoutes from './routes/flow.js';
+import sunatRoutes from './routes/sunat.js';
 
 const app = express();
 app.use(cors());
@@ -21,6 +22,7 @@ app.use('/loans', loanRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/cash-sessions', cashSessionRoutes);
 app.use('/flow', flowRoutes);
+app.use('/sunat', sunatRoutes);
 
 // 404
 app.use((req, res) => {

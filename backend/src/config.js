@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const DNI_API_TOKEN = process.env.DNI_API_TOKEN || '';
+const RUC_API_TOKEN = process.env.RUC_API_TOKEN || DNI_API_TOKEN;
 
 export const config = {
   port: process.env.PORT ? Number(process.env.PORT) : 4000,
@@ -12,5 +13,10 @@ export const config = {
     enabled: ((process.env.DNI_API_ENABLED || '').toLowerCase() === 'true') || (!!DNI_API_TOKEN),
     baseUrl: process.env.DNI_API_URL || 'https://api.decolecta.com/v1',
     token: DNI_API_TOKEN
+  },
+  ruc: {
+    enabled: ((process.env.RUC_API_ENABLED || '').toLowerCase() === 'true') || (!!RUC_API_TOKEN),
+    baseUrl: process.env.RUC_API_URL || process.env.DNI_API_URL || 'https://api.decolecta.com/v1',
+    token: RUC_API_TOKEN
   }
 };

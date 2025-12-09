@@ -2,6 +2,8 @@ import PDFDocument from 'pdfkit';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
+import path from 'path';
+import fs from 'fs';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -130,139 +132,151 @@ function formatDateTime(d) {
   return date.format('DD/MM/YYYY HH:mm:ss');
 }
 
+function round2(v) {
+  return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+}
+
 /**
  * Genera un comprobante de pago en PDF
  */
-export function buildPaymentReceipt(doc, payment) {
+export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
   const client = payment.loan.client;
   const loan = payment.loan;
+  const type = invoiceInfo.type === 'factura' ? 'Factura' : 'Boleta';
 
-  // Encabezado del negocio
-  doc.fontSize(18).font('Helvetica-Bold').text('COMPROBANTE DE PAGO', { align: 'center' });
-  doc.fontSize(10).font('Helvetica');
-  doc.moveDown(0.5);
-  doc.text('Sistema de Préstamos', { align: 'center' });
-  doc.text('RUC: 20123456789', { align: 'center' }); // Reemplazar con RUC real
-  doc.text('Dirección: Lima, Perú', { align: 'center' }); // Reemplazar con dirección real
-  doc.moveDown();
-
-  // Línea divisora
-  doc.moveTo(doc.page.margins.left, doc.y)
-     .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-     .stroke();
-  doc.moveDown();
-
-  // Información del comprobante
-  doc.font('Helvetica-Bold').fontSize(11);
-  doc.text(`N° de Recibo: ${payment.receiptNumber}`, { width: contentWidth });
-  doc.font('Helvetica').fontSize(10);
-  doc.text(`Fecha y Hora: ${formatDateTime(payment.paymentDate)}`, { width: contentWidth });
-  doc.moveDown();
-
-  // Información del cliente
-  doc.font('Helvetica-Bold').fontSize(11).text('DATOS DEL CLIENTE', { width: contentWidth });
-  doc.font('Helvetica').fontSize(10);
-  doc.text(`Cliente: ${client.firstName} ${client.lastName}`, { width: contentWidth });
-  doc.text(`DNI: ${client.dni}`, { width: contentWidth });
-  if (client.email) {
-    doc.text(`Email: ${client.email}`, { width: contentWidth });
-  }
-  if (client.phone) {
-    doc.text(`Teléfono: ${client.phone}`, { width: contentWidth });
-  }
-  doc.moveDown();
-
-  // Información del préstamo
-  doc.font('Helvetica-Bold').fontSize(11).text('DATOS DEL PRÉSTAMO', { width: contentWidth });
-  doc.font('Helvetica').fontSize(10);
-  doc.text(`ID Préstamo: #${loan.id}`, { width: contentWidth });
-  doc.text(`Monto Principal: ${formatCurrency(loan.principal)}`, { width: contentWidth });
-  doc.text(`Tasa de Interés: ${(Number(loan.interestRate) * 100).toFixed(2)}% anual`, { width: contentWidth });
-  doc.moveDown();
-
-  // Desglose del pago
-  doc.font('Helvetica-Bold').fontSize(11).text('DESGLOSE DEL PAGO', { width: contentWidth });
-  doc.font('Helvetica').fontSize(10);
-  
-  const startY = doc.y;
-  const lineHeight = 15;
-  
-  // Columna izquierda
-  let y = startY;
-  doc.text('Capital:', doc.page.margins.left, y);
-  y += lineHeight;
-  doc.text('Interés:', doc.page.margins.left, y);
-  y += lineHeight;
-  if (Number(payment.lateFeePaid) > 0) {
-    doc.text('Mora:', doc.page.margins.left, y);
-    y += lineHeight;
-  }
-  if (Number(payment.roundingAdjustment) !== 0) {
-    doc.text('Redondeo:', doc.page.margins.left, y);
-    y += lineHeight;
-  }
-  
-  doc.moveTo(doc.page.margins.left, y)
-     .lineTo(doc.page.width - doc.page.margins.right, y)
-     .stroke();
-  y += 5;
-  doc.font('Helvetica-Bold').text('TOTAL PAGADO:', doc.page.margins.left, y);
-
-  // Columna derecha (montos)
-  y = startY;
-  const rightX = doc.page.width - doc.page.margins.right - 100;
-  doc.font('Helvetica');
-  doc.text(formatCurrency(payment.principalPaid), rightX, y, { width: 100, align: 'right' });
-  y += lineHeight;
-  doc.text(formatCurrency(payment.interestPaid), rightX, y, { width: 100, align: 'right' });
-  y += lineHeight;
-  if (Number(payment.lateFeePaid) > 0) {
-    doc.text(formatCurrency(payment.lateFeePaid), rightX, y, { width: 100, align: 'right' });
-    y += lineHeight;
-  }
-  if (Number(payment.roundingAdjustment) !== 0) {
-    const adjustment = Number(payment.roundingAdjustment);
-    doc.text(adjustment >= 0 ? `+${formatCurrency(adjustment)}` : formatCurrency(adjustment), rightX, y, { width: 100, align: 'right' });
-    y += lineHeight;
-  }
-  
-  y += 5;
-  doc.font('Helvetica-Bold').fontSize(12);
-  doc.text(formatCurrency(payment.amount), rightX, y, { width: 100, align: 'right' });
-  
-  doc.font('Helvetica').fontSize(10);
-  doc.moveDown(2);
-
-  // Método de pago
-  const paymentMethodNames = {
-    EFECTIVO: 'Efectivo',
-    TARJETA: 'Tarjeta',
-    YAPE: 'Yape',
-    PLIN: 'Plin',
-    FLOW: 'Flow',
-    OTRO: 'Otro',
+  // Datos del emisor (ajusta a tu negocio)
+  const issuer = {
+    name: 'CapiPresta',
+    businessName: 'CapiPresta',
+    address: 'C. Los Almendros 2013, Trujillo 13008',
+    ruc: '20123456789',
+    series: type === 'factura' ? 'F001' : 'B001',
   };
-  doc.text(`Método de Pago: ${paymentMethodNames[payment.paymentMethod] || payment.paymentMethod}`, { width: contentWidth });
-  
-  if (payment.externalReference) {
-    doc.text(`Referencia: ${payment.externalReference}`, { width: contentWidth });
+
+  const total = Number(payment.amount || 0);
+  const opGravada = round2(total / 1.18);
+  const igv = round2(total - opGravada);
+  const number = String(payment.receiptNumber || '').padStart(8, '0');
+
+  const margin = doc.page.margins.left;
+
+  // Logo/Nombre
+  let y = margin;
+  try {
+    const candidate = path.resolve(process.cwd(), '../frontend/public/logogrante.png');
+    const fallback = path.resolve(process.cwd(), 'frontend/public/logogrante.png');
+    const logoPath = fs.existsSync(candidate) ? candidate : fallback;
+    doc.image(logoPath, margin, y, { width: 120 });
+  } catch (e) {
+    // si no existe la imagen, continuar con texto
+    doc.font('Helvetica-Bold').fontSize(20).text(issuer.name, margin, y);
   }
-  
-  doc.moveDown();
-  doc.text(`Registrado por: ${payment.registeredBy.username}`, { width: contentWidth });
-  
+  const textX = margin + 130;
+  doc.font('Helvetica-Bold').fontSize(16).text(issuer.name, textX, y);
+  doc.font('Helvetica').fontSize(12).text(issuer.businessName, textX, y + 18);
+  doc.fontSize(10).text(issuer.address, textX, y + 32);
+
+  // Caja de RUC y doc info
+  const boxW = 200;
+  const boxH = 90;
+  const boxX = doc.page.width - margin - boxW;
+  const boxY = y;
+  doc.rect(boxX, boxY, boxW, boxH).stroke();
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text(`R.U.C. N° ${issuer.ruc}`, boxX, boxY + 8, { width: boxW, align: 'center' });
+  doc.text(`${type.toUpperCase()} ELECTRÓNICA`, boxX, boxY + 28, { width: boxW, align: 'center' });
+  doc.text(`${issuer.series}-${number}`, boxX, boxY + 48, { width: boxW, align: 'center' });
+
+  y = boxY + boxH + 16;
+
+  // Datos del receptor
+  const customerRuc = invoiceInfo.customerRuc || '';
+  const customerName = invoiceInfo.customerName || `${client.firstName} ${client.lastName}`;
+  const customerAddress = invoiceInfo.customerAddress || '-';
+  const customerDocLabel = type === 'factura' ? 'RUC' : 'DNI';
+  const customerDoc = type === 'factura' ? customerRuc : client.dni;
+
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text('NOMBRE:', margin, y, { continued: true }).font('Helvetica').text(` ${customerName}`);
+  y += 14;
+  doc.font('Helvetica-Bold').text(`${customerDocLabel}:`, margin, y, { continued: true }).font('Helvetica').text(` ${customerDoc}`);
+  y += 14;
+  doc.font('Helvetica-Bold').text('DIRECCIÓN:', margin, y, { continued: true }).font('Helvetica').text(` ${customerAddress}`);
+  y += 14;
+  doc.font('Helvetica-Bold').text('EMISIÓN:', margin, y, { continued: true }).font('Helvetica').text(` ${formatDateTime(payment.paymentDate)}`);
+  y += 14;
+  doc.font('Helvetica-Bold').text('MONEDA:', margin, y, { continued: true }).font('Helvetica').text(' SOL (PEN)');
+  y += 14;
+  doc.font('Helvetica-Bold').text('FORMA DE PAGO:', margin, y, { continued: true }).font('Helvetica').text(' CONTADO');
+  y += 14;
+  doc.font('Helvetica-Bold').text('TIPO DE OPERACIÓN:', margin, y, { continued: true }).font('Helvetica').text(' VENTA INTERNA');
+  y += 18;
+
+  // Encabezado tabla
+  const startX = margin;
+  const headerY = y;
+  const colWidths = [80, contentWidth - 80 - 90 - 90, 90, 90];
+  doc.rect(startX, headerY, contentWidth, 24).fill('#1f1f1f');
+  doc.fillColor('white').font('Helvetica-Bold').fontSize(10);
+  const headers = ['CANTIDAD', 'CÓDIGO y DESCRIPCIÓN', 'PRECIO UNITARIO', 'PRECIO TOTAL'];
+  let x = startX + 8;
+  headers.forEach((h, idx) => {
+    doc.text(h, x, headerY + 6, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+    x += colWidths[idx];
+  });
+  doc.fillColor('black').font('Helvetica').fontSize(10);
+
+  // Fila detalle
+  const rowY = headerY + 24;
+  x = startX + 8;
+  const rowVals = [
+    '1 UNIDAD',
+    `Pago préstamo #${loan.id}`,
+    formatCurrency(total),
+    formatCurrency(total)
+  ];
+  rowVals.forEach((val, idx) => {
+    doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+    x += colWidths[idx];
+  });
+
+  // Totales
+  const totalsY = rowY + 32;
+  doc.font('Helvetica-Bold');
+  doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
+  doc.text('IGV', startX + colWidths[0] + colWidths[1], totalsY + 14, { width: colWidths[2], align: 'right' });
+  doc.text('IMPORTE TOTAL (S/)', startX + colWidths[0] + colWidths[1], totalsY + 28, { width: colWidths[2], align: 'right' });
+  doc.font('Helvetica');
+  doc.text(formatCurrency(opGravada), startX + colWidths[0] + colWidths[1] + colWidths[2], totalsY, { width: colWidths[3], align: 'right' });
+  doc.text(formatCurrency(igv), startX + colWidths[0] + colWidths[1] + colWidths[2], totalsY + 14, { width: colWidths[3], align: 'right' });
+  doc.font('Helvetica-Bold');
+  doc.text(formatCurrency(total), startX + colWidths[0] + colWidths[1] + colWidths[2], totalsY + 28, { width: colWidths[3], align: 'right' });
+  doc.font('Helvetica');
+
+  // SON:
   doc.moveDown(2);
-  
-  // Línea divisora
-  doc.moveTo(doc.page.margins.left, doc.y)
-     .lineTo(doc.page.width - doc.page.margins.right, doc.y)
-     .stroke();
-  doc.moveDown();
-  
-  // Pie de página
-  doc.fontSize(8).text('Gracias por su pago', { align: 'center' });
-  doc.text('Conserve este comprobante para cualquier reclamo', { align: 'center' });
+  doc.text(`SON: ${formatCurrency(total)} SOLES`, { width: contentWidth });
+
+  // QR imagen + texto
+  const qrY = doc.y + 10;
+  const qrSize = 90;
+  let qrPlaced = false;
+  try {
+    const qrCandidate = path.resolve(process.cwd(), '../frontend/public/qr.png');
+    const qrFallback = path.resolve(process.cwd(), 'frontend/public/qr.png');
+    const qrPath = fs.existsSync(qrCandidate) ? qrCandidate : qrFallback;
+    doc.image(qrPath, margin, qrY, { width: qrSize, height: qrSize });
+    qrPlaced = true;
+  } catch (e) {
+    // sin QR
+  }
+  if (!qrPlaced) {
+    doc.rect(margin, qrY, qrSize, qrSize).stroke();
+  }
+  doc.fontSize(9).text('Representación impresa de la ' + (type === 'factura' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA') + '.', margin + qrSize + 10, qrY + 10);
+  doc.fillColor('#0d47a1').text('Generada en apisunat.com', margin + qrSize + 10, qrY + 26);
+  doc.fillColor('black');
 }
 
 /**

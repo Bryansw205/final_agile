@@ -36,6 +36,12 @@ export default function LoanDetail() {
   const [paymentMethod, setPaymentMethod] = useState('EFECTIVO');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [cashSession, setCashSession] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptPayment, setReceiptPayment] = useState(null);
+  const [receiptType, setReceiptType] = useState('boleta');
+  const [invoiceRuc, setInvoiceRuc] = useState('');
+  const [invoiceName, setInvoiceName] = useState('');
+  const [invoiceAddress, setInvoiceAddress] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -251,6 +257,73 @@ export default function LoanDetail() {
       const rounded = roundCash(raw);
       setPaymentAmount(rounded.toFixed(2));
     }
+  }
+
+  function handleOpenReceiptModal(payment) {
+    setReceiptPayment(payment);
+    setReceiptType('boleta');
+    setInvoiceRuc('');
+    setInvoiceName('');
+    setInvoiceAddress('');
+    setShowReceiptModal(true);
+    setError('');
+    setSuccess('');
+  }
+
+  function handleCloseReceiptModal() {
+    setShowReceiptModal(false);
+    setReceiptPayment(null);
+    setReceiptType('boleta');
+    setInvoiceRuc('');
+    setInvoiceName('');
+    setInvoiceAddress('');
+  }
+
+  async function handleLookupRuc() {
+    const ruc = (invoiceRuc || '').trim();
+    if (!/^[0-9]{11}$/.test(ruc)) {
+      setError('Ingrese un RUC válido de 11 dígitos');
+      return;
+    }
+    try {
+      setError('');
+      const data = await apiGet(`/sunat/ruc?numero=${encodeURIComponent(ruc)}`);
+      setInvoiceName(data.razonSocial || '');
+      setInvoiceAddress(data.direccion || '');
+      setSuccess(`RUC válido: ${data.razonSocial || ''}`);
+    } catch (err) {
+      setError(err.message || 'No se pudo consultar el RUC');
+    }
+  }
+
+  async function handleDownloadReceipt(e) {
+    e.preventDefault();
+    if (!receiptPayment) return;
+
+    if (receiptType === 'factura') {
+      if (!invoiceRuc || invoiceRuc.trim().length < 8) {
+        setError('Ingrese un RUC válido para factura');
+        return;
+      }
+      if (!invoiceName.trim()) {
+        setError('Ingrese la Razón Social para factura');
+        return;
+      }
+    }
+
+    const params = new URLSearchParams();
+    params.set('type', receiptType);
+    if (receiptType === 'factura') {
+      params.set('customerRuc', invoiceRuc.trim());
+      params.set('customerName', invoiceName.trim());
+      if (invoiceAddress.trim()) params.set('customerAddress', invoiceAddress.trim());
+    }
+
+    await apiDownload(
+      `/payments/${receiptPayment.id}/receipt?${params.toString()}`,
+      `comprobante-${receiptPayment.receiptNumber}.pdf`
+    );
+    handleCloseReceiptModal();
   }
 
   async function handlePayment(e) {
@@ -523,7 +596,7 @@ export default function LoanDetail() {
                   <td>
                     <button
                       className="btn btn-sm"
-                      onClick={() => apiDownload(`/payments/${payment.id}/receipt`, `comprobante-${payment.receiptNumber}.pdf`)}
+                      onClick={() => handleOpenReceiptModal(payment)}
                     >
                       Descargar
                     </button>
@@ -627,6 +700,97 @@ export default function LoanDetail() {
                   style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
                 >
                   {processingPayment ? '⏳ Procesando...' : (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow' : 'Registrar Pago'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Comprobante */}
+      {showReceiptModal && receiptPayment && (
+        <div className="modal-overlay" onClick={handleCloseReceiptModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Descargar Comprobante</h3>
+
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleDownloadReceipt}>
+              <div className="form-group">
+                <label>Tipo de Comprobante</label>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="radio"
+                      name="receiptType"
+                      value="boleta"
+                      checked={receiptType === 'boleta'}
+                      onChange={(e) => setReceiptType(e.target.value)}
+                    />
+                    Boleta
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="radio"
+                      name="receiptType"
+                      value="factura"
+                      checked={receiptType === 'factura'}
+                      onChange={(e) => setReceiptType(e.target.value)}
+                    />
+                    Factura
+                  </label>
+                </div>
+              </div>
+
+              {receiptType === 'factura' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="invoiceRuc">RUC</label>
+                    <input
+                      id="invoiceRuc"
+                      value={invoiceRuc}
+                      onChange={(e) => setInvoiceRuc(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{ marginTop: '0.5rem' }}
+                      onClick={handleLookupRuc}
+                    >
+                      Consultar RUC
+                    </button>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="invoiceName">Razón Social</label>
+                    <input
+                      id="invoiceName"
+                      value={invoiceName}
+                      onChange={(e) => setInvoiceName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="invoiceAddress">Dirección</label>
+                    <input
+                      id="invoiceAddress"
+                      value={invoiceAddress}
+                      onChange={(e) => setInvoiceAddress(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn" onClick={handleCloseReceiptModal}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Descargar
                 </button>
               </div>
             </form>
