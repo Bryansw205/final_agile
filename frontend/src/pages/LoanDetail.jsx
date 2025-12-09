@@ -66,7 +66,12 @@ export default function LoanDetail() {
       setStatement(statementData);
       setCashSession(sessionData.session);
     } catch (e) {
-      setError('No se pudo cargar el préstamo: ' + e.message);
+      console.error('Error cargando préstamo:', e);
+      // Si viene de Flow, no mostrar error inmediato - dejar que continúe polling
+      const fromFlow = searchParams.get('from') === 'flow';
+      if (!fromFlow) {
+        setError('No se pudo cargar el préstamo: ' + e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -75,44 +80,113 @@ export default function LoanDetail() {
   useEffect(() => {
     load();
     
-    // Verificar si viene de Flow - iniciar polling
+    // Detectar si viene de Flow (con o sin token en URL)
     const flowToken = searchParams.get('token');
+    const fromFlow = searchParams.get('from') === 'flow';
+    
     if (flowToken) {
-      console.log('🔍 Detectado token de Flow, iniciando verificación...');
+      // Si hay token en URL, verificar directamente
+      console.log('🔍 Detectado token de Flow en URL, iniciando verificación...');
       verifyFlowPaymentWithPolling(flowToken);
-    } else if (id) {
-      // Si NO hay token pero estamos en la página, verificar si hay pagos Flow pendientes
-      // que podrían haberse completado mientras estaba fuera
-      checkPendingFlowPayments();
+    } else if (fromFlow) {
+      // Si hay parámetro ?from=flow pero sin token, iniciar verificación automática
+      console.log('🔍 Detectado retorno de Flow (sin token), iniciando verificación automática...');
+      verifyFlowPaymentAutomatic();
     }
   }, [id, searchParams]);
 
-  async function checkPendingFlowPayments() {
-    // Verificar si hay pagos de Flow pendientes que puedan haberse completado
+  async function verifyFlowPaymentAutomatic() {
+    /**
+     * Esta función se ejecuta cuando el cliente retorna de Flow sin token en URL.
+     * Realiza polling para verificar si el pago se registró en la BD.
+     * ROBUSTA: Continúa intentando incluso si hay errores de red.
+     */
     try {
-      const apiUrl = import.meta.env.VITE_API_URL;
-      const jwtToken = localStorage.getItem('token');
+      // NO establecer loading aquí para permitir visualización de la página
+      console.log('⏳ Iniciando verificación automática de pago Flow...');
+      setError(''); // Limpiar errores previos
       
-      // Obtener statement para ver si hay cambios
-      const statement = await axios.get(`${apiUrl}/payments/loan/${id}/statement`, {
-        headers: {
-          'Authorization': `Bearer ${jwtToken}`,
+      // Intentar durante 10 minutos (600 segundos)
+      let attempts = 0;
+      const maxAttempts = 300; // 300 * 2 = 600 segundos (10 minutos)
+      let pollInterval;
+      
+      const performPoll = async () => {
+        attempts++;
+        
+        // Log cada 10 intentos para no saturar la consola
+        if (attempts % 10 === 0 || attempts === 1) {
+          console.log(`🔄 Intento ${attempts}/${maxAttempts} (${(attempts * 2).toFixed(0)} segundos)`);
         }
-      });
+        
+        try {
+          const apiUrl = import.meta.env.VITE_API_URL;
+          const jwtToken = localStorage.getItem('token');
+          
+          if (!jwtToken) {
+            console.log('⚠️ Sin token de autenticación');
+            return;
+          }
+          
+          // Recargar datos del préstamo
+          const loanData = await axios.get(`${apiUrl}/loans/${id}`, {
+            headers: {
+              'Authorization': `Bearer ${jwtToken}`,
+            }
+          });
+          
+          const statementData = await axios.get(`${apiUrl}/payments/loan/${id}/statement`, {
+            headers: {
+              'Authorization': `Bearer ${jwtToken}`,
+            }
+          });
+          
+          // Verificar si hay pagos FLOW registrados recientemente
+          const recentFlowPayments = statementData.data.payments.filter(p => {
+            if (p.paymentMethod !== 'FLOW') return false;
+            // Verificar si fue creado en los últimos 2 minutos
+            const paymentTime = new Date(p.createdAt);
+            const now = new Date();
+            const diffSeconds = (now - paymentTime) / 1000;
+            return diffSeconds < 120; // Últimos 2 minutos
+          });
+          
+          if (recentFlowPayments.length > 0) {
+            // Pago exitoso detectado
+            if (pollInterval) clearInterval(pollInterval);
+            console.log('✅ Pago exitoso detectado:', recentFlowPayments[0]);
+            
+            // Actualizar estado
+            setSuccess('¡Pago con Flow realizado exitosamente!');
+            setSearchParams({});
+            
+            // Recargar datos
+            setLoan(loanData);
+            setStatement(statementData.data);
+            setCashSession(null); // Reset cash session
+          }
+        } catch (err) {
+          if (attempts % 30 === 0) {
+            console.log(`⏳ Pago aún no procesado... (${(attempts * 2).toFixed(0)}s) - ${err.message}`);
+          }
+        }
+        
+        if (attempts >= maxAttempts) {
+          if (pollInterval) clearInterval(pollInterval);
+          console.log('⏱️ Timeout: Se alcanzó el máximo de intentos (10 minutos)');
+          setError('El tiempo de espera se agotó. Por favor, recarga la página para verificar el estado del pago.')
+        }
+      };
       
-      // Buscar pagos FLOW sin completar
-      const pendingFlowPayments = statement.data.payments.filter(p => 
-        p.paymentMethod === 'FLOW' && p.externalReference
-      );
+      // Ejecutar inmediatamente la primera verificación
+      await performPoll();
       
-      if (pendingFlowPayments.length > 0) {
-        console.log('🔍 Encontrados pagos Flow, verificando estado...');
-        // El sistema ya habrá registrado estos pagos si se completaron
-        // Solo verificar que el estado de la cuota sea correcto
-        await load();
-      }
+      // Luego crear intervalo para reintentos
+      pollInterval = setInterval(performPoll, 2000); // Preguntar cada 2 segundos
+      
     } catch (err) {
-      console.log('ℹ️ No hay pagos Flow pendientes');
+      console.error('❌ Error iniciando verificación automática de Flow:', err);
+      setError('Error verificando el pago de Flow: ' + err.message);
     }
   }
 
@@ -413,7 +487,24 @@ export default function LoanDetail() {
   }
 
   if (loading && !loan) return <div className="section">Cargando...</div>;
-  if (error && !loan) return <div className="section"><div className="badge badge-red">{error}</div></div>;
+  
+  // Si viene de Flow y aún no cargó, mostrar estado de verificación en lugar de error
+  const fromFlow = searchParams.get('from') === 'flow';
+  if (error && !loan) {
+    if (fromFlow) {
+      return <div className="section" style={{ textAlign: 'center', padding: '2rem' }}>
+        <div style={{ marginBottom: '1rem' }}>
+          <svg style={{ animation: 'spin 1s linear infinite', width: '40px', height: '40px' }} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="15 10" />
+          </svg>
+        </div>
+        <p><strong>Verificando tu pago con Flow...</strong></p>
+        <p style={{ fontSize: '0.9rem', color: '#666' }}>Esto puede tomar algunos segundos</p>
+      </div>;
+    }
+    return <div className="section"><div className="badge badge-red">{error}</div></div>;
+  }
+  
   if (!loan) return null;
 
   const totalAPagar = statement?.totals?.totalDebt || 0;

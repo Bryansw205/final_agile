@@ -255,3 +255,12 @@ h4{font-size:1.15rem;margin:0}
   background-color: #d1ecf1;
   color: #0c5460;
 }
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

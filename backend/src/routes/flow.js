@@ -58,7 +58,7 @@ router.post(
         email: ownerEmail,
         commerceOrder,
         urlConfirmation: `${baseUrl}/flow/webhook`,
-        urlReturn: `${frontendUrl}/loans/${loanId}`,
+        urlReturn: `${frontendUrl}/loans/${loanId}?from=flow`,
         paymentMethod: 9, // 9 = Todos los medios de pago
         optional: { loanId, userId, installmentId: installmentId || null, commerceOrder },
       });
@@ -391,6 +391,51 @@ router.post(
       });
     } catch (error) {
       console.error('Error confirmando pago de Flow:', error);
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /flow/pending-payments/:loanId
+ * Obtiene los pagos de Flow pendientes de registrar para un préstamo
+ * Útil para el fallback cuando Flow redirige sin parámetros
+ */
+router.get(
+  '/pending-payments/:loanId',
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const { loanId } = req.params;
+      
+      // Buscar pagos FLOW sin externalReference que sean recientes
+      const pendingFlowPayments = await prisma.payment.findMany({
+        where: {
+          loanId: Number(loanId),
+          paymentMethod: 'FLOW',
+          externalReference: null,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: 10,
+      });
+
+      // También buscar en cache global
+      const cachedFlowOrders = global.flowPaymentCache 
+        ? Object.values(global.flowPaymentCache).filter(p => p.loanId === Number(loanId))
+        : [];
+
+      console.log('📋 Pagos Flow pendientes:', { 
+        inDatabase: pendingFlowPayments.length,
+        inCache: cachedFlowOrders.length
+      });
+
+      res.json({
+        pendingInDatabase: pendingFlowPayments,
+        pendingInCache: cachedFlowOrders,
+      });
+    } catch (error) {
       next(error);
     }
   }
