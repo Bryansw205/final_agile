@@ -230,7 +230,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   // Fila detalle
   const rowY = headerY + 24;
   x = startX + 8;
-  
+
   // Si es un pago adelantado con múltiples cuotas O tiene installmentsPaid, mostrar el detalle
   let lastRowY = rowY;
   if (payment.installmentsPaid && payment.installmentsPaid.length > 0) {
@@ -239,7 +239,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
     payment.installmentsPaid.forEach((inst, idx) => {
       const rowVals = [
         '1 UNIDAD',
-        `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
+        `Pago cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
         formatCurrency(inst.installmentAmount),
         formatCurrency(inst.installmentAmount)
       ];
@@ -257,7 +257,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
     // Pago individual sin installmentsPaid (compatibilidad)
     const rowVals = [
       '1 UNIDAD',
-      `Pago préstamo #${loan.id}`,
+      `Pago cuota #1`,
       formatCurrency(total),
       formatCurrency(total)
     ];
@@ -270,9 +270,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   }
 
   // Línea separadora
-  doc.moveTo(startX, lastRowY).lineTo(startX + contentWidth, lastRowY).stroke();
-
-  // Totales
+  doc.moveTo(startX, lastRowY).lineTo(startX + contentWidth, lastRowY).stroke();  // Totales
   const totalsY = lastRowY + 12;
   doc.font('Helvetica-Bold');
   doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
