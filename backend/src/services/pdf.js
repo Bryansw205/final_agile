@@ -231,9 +231,9 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   const rowY = headerY + 24;
   x = startX + 8;
   
-  // Si es un pago adelantado con múltiples cuotas, mostrar el detalle
+  // Si es un pago adelantado con múltiples cuotas O tiene installmentsPaid, mostrar el detalle
   let lastRowY = rowY;
-  if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
+  if (payment.installmentsPaid && payment.installmentsPaid.length > 0) {
     // Mostrar cada cuota en una fila separada
     let currentY = rowY;
     payment.installmentsPaid.forEach((inst, idx) => {
@@ -254,7 +254,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
     });
     lastRowY = currentY;
   } else {
-    // Pago individual
+    // Pago individual sin installmentsPaid (compatibilidad)
     const rowVals = [
       '1 UNIDAD',
       `Pago préstamo #${loan.id}`,
