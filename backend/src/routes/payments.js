@@ -255,7 +255,7 @@ router.get(
       const prisma = new PrismaClient();
       
       const payments = await prisma.payment.findMany({
-        where: { loanId: Number(req.params.loanId) },
+        where: { loanId: Number(req.params.loanId), receiptType: { not: null } },
         include: {
           registeredBy: {
             select: {
@@ -305,18 +305,11 @@ router.get(
   async (req, res, next) => {
     try {
       const statement = await getLoanStatement(Number(req.params.loanId));
-      
-      // Convertir Decimals a números
-      res.json({
-        ...statement,
-        schedule: statement.schedule.map(s => ({
-          ...s,
-          installmentAmount: Number(s.installmentAmount),
-          principalAmount: Number(s.principalAmount),
-          interestAmount: Number(s.interestAmount),
-          remainingBalance: Number(s.remainingBalance),
-        })),
-        payments: statement.payments.map(p => ({
+
+      // Convertir Decimals a números y filtrar pagos con comprobante configurado
+      const paymentsWithReceipt = statement.payments
+        .filter((p) => !!p.receiptType)
+        .map(p => ({
           ...p,
           amount: Number(p.amount),
           principalPaid: Number(p.principalPaid),
@@ -327,7 +320,18 @@ router.get(
           invoiceRuc: p.invoiceRuc,
           invoiceBusinessName: p.invoiceBusinessName,
           invoiceAddress: p.invoiceAddress,
+        }));
+
+      res.json({
+        ...statement,
+        schedule: statement.schedule.map(s => ({
+          ...s,
+          installmentAmount: Number(s.installmentAmount),
+          principalAmount: Number(s.principalAmount),
+          interestAmount: Number(s.interestAmount),
+          remainingBalance: Number(s.remainingBalance),
         })),
+        payments: paymentsWithReceipt,
         lateFees: statement.lateFees.map(f => ({
           ...f,
           feeAmount: Number(f.feeAmount),
@@ -489,11 +493,11 @@ router.post(
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();
 
-      const updated = await prisma.payment.update({
-        where: { id },
-        data: {
-          receiptType,
-          invoiceRuc: invoiceRuc || null,
+    const updated = await prisma.payment.update({
+      where: { id },
+      data: {
+        receiptType,
+        invoiceRuc: invoiceRuc || null,
           invoiceBusinessName: invoiceBusinessName || null,
           invoiceAddress: invoiceAddress || null,
         },
@@ -513,7 +517,7 @@ router.post(
           where: { id: updated.installmentId },
         });
         const paymentsForInstallment = await prisma.payment.findMany({
-          where: { installmentId: updated.installmentId },
+          where: { installmentId: updated.installmentId, receiptType: { not: null } },
           select: { amount: true },
         });
         const totalPaid = paymentsForInstallment.reduce((sum, p) => sum + Number(p.amount), 0);
