@@ -357,13 +357,45 @@ export default function LoanDetail() {
   }
 
   function handleToggleInstallmentSelection(installmentId) {
+    const installment = scheduleWithRemaining.find(s => s.id === installmentId);
+    if (!installment) return;
+
     const newSelected = new Set(selectedInstallments);
+    const pendingInstallments = scheduleWithRemaining
+      .filter(s => !s.isPaid)
+      .sort((a, b) => a.installmentNumber - b.installmentNumber);
+
     if (newSelected.has(installmentId)) {
+      // Deseleccionar siempre está permitido
       newSelected.delete(installmentId);
     } else {
-      newSelected.add(installmentId);
+      // Validar que se seleccione en orden consecutivo desde el inicio
+      const maxSelectedNumber = newSelected.size > 0
+        ? Math.max(...Array.from(newSelected).map(id => {
+            const inst = scheduleWithRemaining.find(s => s.id === id);
+            return inst ? inst.installmentNumber : 0;
+          }))
+        : 0;
+
+      // Solo permite seleccionar la siguiente cuota en orden
+      if (installment.installmentNumber === maxSelectedNumber + 1) {
+        newSelected.add(installmentId);
+      } else if (newSelected.size === 0) {
+        // Si no hay ninguna seleccionada, solo permite la cuota #1
+        if (installment.installmentNumber === pendingInstallments[0]?.installmentNumber) {
+          newSelected.add(installmentId);
+        } else {
+          setError('Debes comenzar seleccionando la cuota #' + pendingInstallments[0]?.installmentNumber);
+          return;
+        }
+      } else {
+        setError('Solo puedes seleccionar cuotas consecutivas. Selecciona la cuota #' + (maxSelectedNumber + 1));
+        return;
+      }
     }
+
     setSelectedInstallments(newSelected);
+    setError('');
   }
 
   function handleSelectAdvancePaymentMethod(method) {
@@ -1238,11 +1270,28 @@ export default function LoanDetail() {
                   {scheduleWithRemaining
                     .filter(s => !s.isPaid)
                     .sort((a, b) => a.installmentNumber - b.installmentNumber)
-                    .map((installment) => {
+                    .map((installment, idx) => {
                       const isSelected = selectedInstallments.has(installment.id);
                       const hasLateFee = installment.lateFeeAmount > 0;
                       const daysOverdue = dayjs().diff(dayjs(installment.dueDate), 'day');
                       const isOverdue = daysOverdue > 0;
+
+                      // Calcular si esta cuota puede ser seleccionada (orden consecutivo)
+                      const pendingInstallments = scheduleWithRemaining
+                        .filter(s => !s.isPaid)
+                        .sort((a, b) => a.installmentNumber - b.installmentNumber);
+                      const maxSelectedNumber = selectedInstallments.size > 0
+                        ? Math.max(...Array.from(selectedInstallments).map(id => {
+                            const inst = scheduleWithRemaining.find(s => s.id === id);
+                            return inst ? inst.installmentNumber : 0;
+                          }))
+                        : 0;
+
+                      const canSelect = selectedInstallments.size === 0
+                        ? installment.installmentNumber === pendingInstallments[0]?.installmentNumber
+                        : installment.installmentNumber === maxSelectedNumber + 1;
+
+                      const isDisabled = !isSelected && !canSelect;
 
                       return (
                         <label
@@ -1254,23 +1303,37 @@ export default function LoanDetail() {
                             padding: '1rem',
                             backgroundColor: isSelected ? '#e3f2fd' : 'white',
                             borderRadius: '8px',
-                            border: isSelected ? '2px solid #007bff' : '1px solid #e0e0e0',
-                            cursor: 'pointer',
+                            border: isSelected ? '2px solid #007bff' : isDisabled ? '1px solid #ccc' : '1px solid #e0e0e0',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
                             transition: 'all 0.2s ease',
-                            boxShadow: isSelected ? '0 2px 8px rgba(0, 123, 255, 0.15)' : 'none'
+                            boxShadow: isSelected ? '0 2px 8px rgba(0, 123, 255, 0.15)' : 'none',
+                            opacity: isDisabled ? 0.5 : 1
                           }}
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => handleToggleInstallmentSelection(installment.id)}
-                            style={{ cursor: 'pointer', transform: 'scale(1.3)', accentColor: '#007bff' }}
+                            onChange={() => !isDisabled && handleToggleInstallmentSelection(installment.id)}
+                            disabled={isDisabled}
+                            style={{ cursor: isDisabled ? 'not-allowed' : 'pointer', transform: 'scale(1.3)', accentColor: '#007bff' }}
                           />
                           <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
                               <strong style={{ fontSize: '1.15rem', color: '#333' }}>
                                 Cuota #{installment.installmentNumber}
                               </strong>
+                              {isDisabled && selectedInstallments.size > 0 && (
+                                <span style={{
+                                  backgroundColor: '#e0e0e0',
+                                  color: '#666',
+                                  padding: '0.2rem 0.7rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 'bold'
+                                }}>
+                                  🔒 No disponible
+                                </span>
+                              )}
                               {isOverdue && (
                                 <span style={{
                                   backgroundColor: '#ff6b6b',
