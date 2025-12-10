@@ -187,7 +187,7 @@ export function generateReceiptNumber() {
 
 /**
  * Registra un pago adelantado para múltiples cuotas
- * Este pago NO afecta la estructura de datos existente, solo agrega un nuevo registro
+ * Este pago crea registros individuales por cada cuota seleccionada
  */
 export async function registerAdvancePayment({
   loanId,
@@ -262,11 +262,19 @@ export async function registerAdvancePayment({
 
   // Calcular el total exacto adeudado para las cuotas seleccionadas
   let totalOwed = 0;
+  const installmentDetails = [];
+
   for (const installment of selectedInstallments) {
     const paymentsForInstallment = loan.payments.filter(p => p.installmentId === installment.id);
     const lateFeeInfo = calculateInstallmentLateFee(installment, paymentsForInstallment);
     const pendingTotal = Number(lateFeeInfo.pendingTotal || 0);
     totalOwed += pendingTotal;
+    installmentDetails.push({
+      installment,
+      lateFeeInfo,
+      pendingTotal,
+      paymentsForInstallment
+    });
   }
   totalOwed = round2(totalOwed);
 
@@ -293,74 +301,88 @@ export async function registerAdvancePayment({
     throw new Error('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
   }
 
-  // Calcular distribución del pago entre principal, interés y mora
-  let principalPaid = 0;
-  let interestPaid = 0;
-  let lateFeePaid = 0;
-  let remaining = paymentAmount;
-
-  // Distribuir el pago por cuota: interés → capital → mora
-  for (const installment of selectedInstallments) {
-    const paymentsForInstallment = loan.payments.filter(p => p.installmentId === installment.id);
-    const lateFeeInfo = calculateInstallmentLateFee(installment, paymentsForInstallment);
-    
-    let installmentInterestRemaining = Number(installment.interestAmount) - 
-      paymentsForInstallment.reduce((sum, p) => sum + Number(p.interestPaid || 0), 0);
-    installmentInterestRemaining = Math.max(0, installmentInterestRemaining);
-
-    let installmentPrincipalRemaining = Number(installment.principalAmount) - 
-      paymentsForInstallment.reduce((sum, p) => sum + Number(p.principalPaid || 0), 0);
-    installmentPrincipalRemaining = Math.max(0, installmentPrincipalRemaining);
-
-    let installmentLateFeePending = Number(lateFeeInfo.lateFeeAmount || 0);
-
-    // Pagar interés
-    if (installmentInterestRemaining > 0 && remaining > 0) {
-      const toPay = Math.min(remaining, installmentInterestRemaining);
-      interestPaid += toPay;
-      remaining = round2(remaining - toPay);
-      installmentInterestRemaining = round2(installmentInterestRemaining - toPay);
-    }
-
-    // Pagar principal
-    if (installmentPrincipalRemaining > 0 && remaining > 0) {
-      const toPay = Math.min(remaining, installmentPrincipalRemaining);
-      principalPaid += toPay;
-      remaining = round2(remaining - toPay);
-      installmentPrincipalRemaining = round2(installmentPrincipalRemaining - toPay);
-    }
-
-    // Pagar mora si el principal e interés están cubiertos
-    if (installmentInterestRemaining <= OUTSTANDING_TOLERANCE && 
-        installmentPrincipalRemaining <= OUTSTANDING_TOLERANCE && 
-        installmentLateFeePending > 0 && remaining > 0) {
-      const toPay = Math.min(remaining, installmentLateFeePending);
-      lateFeePaid += toPay;
-      remaining = round2(remaining - toPay);
-    }
-  }
-
-  principalPaid = round2(principalPaid);
-  interestPaid = round2(interestPaid);
-  lateFeePaid = round2(lateFeePaid);
-
   const receiptNumber = generateReceiptNumber();
 
   // Registrar el pago y marcar cuotas como pagadas
   const payment = await prisma.$transaction(async (tx) => {
-    // 1. Crear un único pago consolidado
+    // 1. Distribuir el pago total entre las cuotas (en el mismo orden)
+    let remaining = paymentAmount;
+    let totalPrincipalPaid = 0;
+    let totalInterestPaid = 0;
+    let totalLateFeePaid = 0;
+    const paymentsByInstallment = [];
+
+    // Procesar cada cuota en orden
+    for (const detail of installmentDetails) {
+      const { installment, lateFeeInfo, paymentsForInstallment } = detail;
+
+      let installmentInterestRemaining = Number(installment.interestAmount) -
+        paymentsForInstallment.reduce((sum, p) => sum + Number(p.interestPaid || 0), 0);
+      installmentInterestRemaining = Math.max(0, installmentInterestRemaining);
+
+      let installmentPrincipalRemaining = Number(installment.principalAmount) -
+        paymentsForInstallment.reduce((sum, p) => sum + Number(p.principalPaid || 0), 0);
+      installmentPrincipalRemaining = Math.max(0, installmentPrincipalRemaining);
+
+      let installmentLateFeePending = Number(lateFeeInfo.lateFeeAmount || 0);
+
+      let principalPaidForThis = 0;
+      let interestPaidForThis = 0;
+      let lateFeePaidForThis = 0;
+
+      // Pagar interés
+      if (installmentInterestRemaining > 0 && remaining > 0) {
+        const toPay = Math.min(remaining, installmentInterestRemaining);
+        interestPaidForThis = toPay;
+        totalInterestPaid += toPay;
+        remaining = round2(remaining - toPay);
+        installmentInterestRemaining = round2(installmentInterestRemaining - toPay);
+      }
+
+      // Pagar principal
+      if (installmentPrincipalRemaining > 0 && remaining > 0) {
+        const toPay = Math.min(remaining, installmentPrincipalRemaining);
+        principalPaidForThis = toPay;
+        totalPrincipalPaid += toPay;
+        remaining = round2(remaining - toPay);
+        installmentPrincipalRemaining = round2(installmentPrincipalRemaining - toPay);
+      }
+
+      // Pagar mora si el principal e interés están cubiertos
+      if (installmentInterestRemaining <= OUTSTANDING_TOLERANCE &&
+          installmentPrincipalRemaining <= OUTSTANDING_TOLERANCE &&
+          installmentLateFeePending > 0 && remaining > 0) {
+        const toPay = Math.min(remaining, installmentLateFeePending);
+        lateFeePaidForThis = toPay;
+        totalLateFeePaid += toPay;
+        remaining = round2(remaining - toPay);
+      }
+
+      const amountForThis = round2(principalPaidForThis + interestPaidForThis + lateFeePaidForThis);
+
+      paymentsByInstallment.push({
+        installmentId: installment.id,
+        installmentNumber: installment.installmentNumber,
+        principalPaid: round2(principalPaidForThis),
+        interestPaid: round2(interestPaidForThis),
+        lateFeePaid: round2(lateFeePaidForThis),
+        amount: amountForThis
+      });
+    }
+
+    // 2. Crear UN registro de pago consolidado (sin installmentId) con referencia a todas las cuotas
     const newPayment = await tx.payment.create({
       data: {
         loanId,
-        installmentId: null, // Pago adelantado no se asocia a una cuota específica
+        installmentId: null, // Pago adelantado: sin cuota específica
         registeredByUserId,
         amount: paymentAmount,
         paymentMethod,
-        principalPaid,
-        interestPaid,
-        lateFeePaid,
+        principalPaid: round2(totalPrincipalPaid),
+        interestPaid: round2(totalInterestPaid),
+        lateFeePaid: round2(totalLateFeePaid),
         roundingAdjustment: 0,
-        externalReference,
+        externalReference: externalReference ? `${externalReference}|ADVANCE` : 'ADVANCE',
         receiptNumber,
         cashSessionId,
         paymentDate: new Date(),
@@ -380,36 +402,30 @@ export async function registerAdvancePayment({
       },
     });
 
-    console.log('✅ Pago adelantado creado:', { paymentId: newPayment.id, amount: paymentAmount, cuotasCount: selectedInstallments.length });
+    console.log('✅ Pago adelantado creado:', {
+      paymentId: newPayment.id,
+      amount: paymentAmount,
+      cuotasCount: selectedInstallments.length,
+      breakdown: paymentsByInstallment
+    });
 
-    // 2. Marcar cuotas seleccionadas como pagadas
+    // 3. Marcar cuotas seleccionadas como pagadas
     for (const installment of selectedInstallments) {
-      // Obtener todos los pagos para esta cuota (incluyendo el que acaba de crearse)
-      const allPaymentsForInstallment = await tx.payment.findMany({
-        where: { installmentId: installment.id },
+      await tx.paymentSchedule.update({
+        where: { id: installment.id },
+        data: { isPaid: true },
       });
-
-      const lateFeeDetails = calculateInstallmentLateFee(installment, allPaymentsForInstallment);
-      const outstandingAmount = Number(lateFeeDetails.pendingTotal ?? 0);
-      const shouldMarkAsPaid = outstandingAmount <= OUTSTANDING_TOLERANCE;
-
-      if (shouldMarkAsPaid) {
-        await tx.paymentSchedule.update({
-          where: { id: installment.id },
-          data: { isPaid: true },
-        });
-        console.log('✅ Cuota marcada como pagada:', installment.id);
-      }
+      console.log('✅ Cuota #' + installment.installmentNumber + ' marcada como pagada');
     }
 
-    // 3. Marcar moras como pagadas si corresponde
-    if (lateFeePaid > 0) {
-      let remainingLateFee = lateFeePaid;
+    // 4. Marcar moras como pagadas si corresponde
+    if (totalLateFeePaid > 0) {
+      let remainingLateFee = totalLateFeePaid;
       for (const fee of loan.lateFees) {
         if (remainingLateFee <= 0) break;
         
         const feeAmount = Number(fee.feeAmount);
-        if (remainingLateFee >= feeAmount) {
+        if (remainingLateFee >= feeAmount - OUTSTANDING_TOLERANCE) {
           await tx.lateFee.update({
             where: { id: fee.id },
             data: { isPaid: true },
