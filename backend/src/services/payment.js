@@ -433,16 +433,7 @@ export async function registerAdvancePayment({
         const lateFeeDetailsNow = calculateInstallmentLateFee(installment, allPaymentsNow);
         const outstandingAmount = Number(lateFeeDetailsNow.pendingTotal || 0);
 
-        if (outstandingAmount <= OUTSTANDING_TOLERANCE) {
-          await tx.paymentSchedule.update({
-            where: { id: installment.id },
-            data: { 
-              isPaid: true,
-              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
-            },
-          });
-          console.log('✅ Cuota #' + installment.installmentNumber + ' marcada como pagada');
-        }
+        // No marcar pagada aún; se marcará cuando se guarde el comprobante
 
         // Marcar moras como pagadas si se pagaron
         if (installmentLateFeePaid > 0) {
@@ -836,66 +827,7 @@ export async function registerPayment({
       }
     }
 
-    // 3. Marcar la cuota como pagada si se pagó el monto completo
-    if (installmentId) {
-      console.log('🔍 Verificando si marcar cuota como pagada:', { installmentId });
-      
-      const installment = await tx.paymentSchedule.findUnique({
-        where: { id: installmentId },
-      });
-
-      if (installment) {
-        const installmentAmount = Number(installment.installmentAmount);
-        // Obtener TODOS los pagos para esta cuota (INCLUYENDO el que acaba de crearse)
-        const allPaymentsForInstallment = await tx.payment.findMany({
-          where: { installmentId },
-        });
-
-        const totalPaid = allPaymentsForInstallment.reduce((sum, p) => sum + Number(p.amount), 0);
-        const lateFeeDetails = calculateInstallmentLateFee(installment, allPaymentsForInstallment);
-        const outstandingInstallment = Number(lateFeeDetails.remainingInstallment || 0);
-        const outstandingLateFee = Number(lateFeeDetails.lateFeeAmount || 0);
-        const outstandingAmount = Number(
-          lateFeeDetails.pendingTotal ?? round2(outstandingInstallment + outstandingLateFee)
-        );
-        const shouldMarkAsPaid = outstandingAmount <= OUTSTANDING_TOLERANCE;
-
-        console.log('📊 Pagos encontrados para cuota:', {
-          installmentId,
-          totalPaid,
-          paymentCount: allPaymentsForInstallment.length
-        });
-
-        console.log('💰 Comparación de montos:', {
-          installmentId,
-          installmentAmount,
-          outstandingInstallment,
-          outstandingLateFee,
-          totalPaid,
-          outstandingAmount,
-          outstandingTolerance: OUTSTANDING_TOLERANCE,
-          shouldMarkAsPaid,
-        });
-
-        // Solo marcar como pagada si el total pagado cubre el monto exacto (sin redondear)
-        if (shouldMarkAsPaid) {
-          await tx.paymentSchedule.update({
-            where: { id: installmentId },
-            data: { 
-              isPaid: true,
-              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
-            },
-          });
-          console.log('✅ Cuota marcada como pagada:', installmentId);
-        } else {
-          console.log('⏳ Cuota aún no completamente pagada');
-        }
-      } else {
-        console.log('❌ No se encontró la cuota con id:', installmentId);
-      }
-    } else {
-      console.log('⚠️ No se proporcionó installmentId');
-    }
+    // No marcar cuota aquí; se marcará tras guardar comprobante
 
     return newPayment;
   });
