@@ -358,7 +358,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   // SON:
   doc.moveDown(2);
   doc.font('Helvetica-Bold').fontSize(11);
-  doc.text(`SON: ${numberToWords(total)} SOLES`, margin, doc.y, { width: contentWidth - margin });
+  doc.text(`SON: ${numberToWords(total)} SOLES`, margin, doc.y, { width: contentWidth - margin, align: 'right' });
   doc.font('Helvetica').fontSize(10);
 
   // QR imagen + texto
