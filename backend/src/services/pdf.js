@@ -227,82 +227,44 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   });
   doc.fillColor('black').font('Helvetica').fontSize(10);
 
-  // Fila detalle - MOSTRAR CUOTAS ESPECÍFICAMENTE SI ES PAGO ADELANTADO
-  let rowY = headerY + 24;
-
-  if (payment.installmentsPaid && payment.installmentsPaid.length > 0) {
-    // Pago adelantado: mostrar cada cuota de forma específica
-    const isAdvancePayment = payment.installmentsPaid.length > 1 || !payment.installmentId;
-
-    if (isAdvancePayment) {
-      // Mostrar encabezado de tipo de pago
-      doc.font('Helvetica-Bold').fontSize(9).fillColor('#0066cc');
-      doc.text('PAGO ADELANTADO - MÚLTIPLES CUOTAS', startX + 8, rowY - 4);
-      doc.fillColor('black');
-      rowY += 16;
-
-      // Mostrar cada cuota con detalle
-      payment.installmentsPaid.forEach((inst, idx) => {
-        const installmentNum = inst.installmentNumber || idx + 1;
-        const dueDate = formatDate(inst.dueDate);
-        const amount = Number(inst.installmentAmount || 0);
-
-        const description = `Cuota #${installmentNum} - Vencimiento: ${dueDate}`;
-
-        x = startX + 8;
-        doc.font('Helvetica').fontSize(9);
-        doc.text('1 UNIDAD', x, rowY + 4, { width: colWidths[0] - 16, align: 'left' });
-        x += colWidths[0];
-        doc.text(description, x, rowY + 4, { width: colWidths[1] - 16, align: 'left' });
-        x += colWidths[1];
-        doc.text(formatCurrency(amount), x, rowY + 4, { width: colWidths[2] - 16, align: 'right' });
-        x += colWidths[2];
-        doc.text(formatCurrency(amount), x, rowY + 4, { width: colWidths[3] - 16, align: 'right' });
-
-        rowY += 18;
-      });
-
-      // Nota sobre el pago adelantado
-      doc.font('Helvetica').fontSize(8).fillColor('#666666');
-      doc.text(`Total de cuotas pagadas: ${payment.installmentsPaid.length}`, startX + 8, rowY);
-      rowY += 12;
-      doc.fillColor('black');
-    } else {
-      // Pago individual (aunque tenga installmentsPaid, es de una sola cuota)
-      const inst = payment.installmentsPaid[0];
-      const installmentNum = inst.installmentNumber || 1;
-      const dueDate = formatDate(inst.dueDate);
-           const rowVals = [
+  // Fila detalle
+  const rowY = headerY + 24;
+  x = startX + 8;
+  
+  // Si es un pago adelantado con múltiples cuotas, mostrar el detalle
+  if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
+    // Mostrar cada cuota en una fila separada
+    let currentY = rowY;
+    payment.installmentsPaid.forEach((inst) => {
+      const rowVals = [
         '1 UNIDAD',
-        `Cuota #${installmentNum} (${dueDate}) - Préstamo #${loan.id}`,
-        formatCurrency(total),
-        formatCurrency(total)
+        `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
+        formatCurrency(inst.installmentAmount),
+        formatCurrency(inst.installmentAmount)
       ];
       x = startX + 8;
       rowVals.forEach((val, idx) => {
-        doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+        doc.text(val, x, currentY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
         x += colWidths[idx];
       });
-      rowY += 20;
-    }
+      currentY += 20;
+    });
   } else {
-    // Sin información de cuotas específicas
+    // Pago individual
     const rowVals = [
       '1 UNIDAD',
       `Pago préstamo #${loan.id}`,
       formatCurrency(total),
       formatCurrency(total)
     ];
-    x = startX + 8;
     rowVals.forEach((val, idx) => {
       doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
       x += colWidths[idx];
     });
-    rowY += 20;
   }
 
   // Totales
-  const totalsY = rowY + 10;
+  const totalsY = rowY + 32;
   doc.font('Helvetica-Bold');
   doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
   doc.text('IGV', startX + colWidths[0] + colWidths[1], totalsY + 14, { width: colWidths[2], align: 'right' });
