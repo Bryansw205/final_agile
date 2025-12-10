@@ -266,18 +266,10 @@ export async function registerAdvancePayment({
     for (const prevInstallment of previousInstallments) {
       if (prevInstallment.isPaid === false) {
         const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
-        const previousLateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
-        const previousPrincipalInterestPaid = paymentsForPrevious.reduce(
-          (sum, p) => sum + Number(p.principalPaid || 0) + Number(p.interestPaid || 0),
-          0
-        );
-        const remainingPrincipalInterest = Math.max(
-          0,
-          round2(Number(prevInstallment.installmentAmount || 0) - previousPrincipalInterestPaid)
-        );
-        const previousOutstanding = round2(
-          remainingPrincipalInterest + Number(previousLateFeeInfo.lateFeeAmount || 0)
-        );
+        
+        // Calcular lo que realmente falta pagar (usando calculateInstallmentLateFee que es la función correcta)
+        const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
+        const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
 
         if (previousOutstanding > OUTSTANDING_TOLERANCE) {
           throw new Error(
@@ -655,18 +647,10 @@ export async function registerPayment({
     const previousInstallments = loan.schedules.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
     for (const prevInstallment of previousInstallments) {
       const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
-      const previousLateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
-      const previousPrincipalInterestPaid = paymentsForPrevious.reduce(
-        (sum, p) => sum + Number(p.principalPaid || 0) + Number(p.interestPaid || 0),
-        0
-      );
-      const remainingPrincipalInterest = Math.max(
-        0,
-        round2(Number(prevInstallment.installmentAmount || 0) - previousPrincipalInterestPaid)
-      );
-      const previousOutstanding = round2(
-        remainingPrincipalInterest + Number(previousLateFeeInfo.lateFeeAmount || 0)
-      );
+      
+      // Calcular lo que realmente falta pagar (usando calculateInstallmentLateFee que es la función correcta)
+      const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
+      const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
 
       if (previousOutstanding > OUTSTANDING_TOLERANCE) {
         throw new Error(
@@ -975,6 +959,17 @@ export async function getLoanStatement(loanId) {
   const pendingInterest = round2(totalInterest - interestPaid);
   const pendingLateFee = round2(totalLateFee - lateFeePaid);
 
+  // Recalcular remainingBalance para cada cuota dinámicamente basado en pagos reales
+  const scheduleWithCalculatedBalance = loan.schedules.map(schedule => {
+    const paymentsForSchedule = loan.payments.filter(p => p.installmentId === schedule.id);
+    const lateFeeInfo = calculateInstallmentLateFee(schedule, paymentsForSchedule);
+    
+    return {
+      ...schedule,
+      remainingBalance: lateFeeInfo.pendingTotal, // Usar el cálculo dinámico, no el valor guardado
+    };
+  });
+
   return {
     loan: {
       id: loan.id,
@@ -998,7 +993,7 @@ export async function getLoanStatement(loanId) {
       pendingInterest,
       pendingLateFee,
     },
-    schedule: loan.schedules,
+    schedule: scheduleWithCalculatedBalance,
     payments: loan.payments,
     lateFees: loan.lateFees,
   };
