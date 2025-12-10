@@ -123,6 +123,10 @@ router.get(
         return res.status(404).json({ error: 'Pago no encontrado' });
       }
 
+      if (!payment.receiptType) {
+        return res.status(400).json({ error: 'El comprobante aún no ha sido configurado' });
+      }
+
       res.json({
         id: payment.id,
         receiptNumber: payment.receiptNumber,

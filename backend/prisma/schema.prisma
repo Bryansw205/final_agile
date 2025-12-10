@@ -100,7 +100,7 @@ model Payment {
   cashSessionId    Int?
   cashSession      CashSession?  @relation(fields: [cashSessionId], references: [id])
   createdAt        DateTime      @default(now())
-  receiptType      ReceiptType   @default(BOLETA)
+  receiptType      ReceiptType?
   invoiceRuc       String?
   invoiceBusinessName String?
   invoiceAddress   String?
