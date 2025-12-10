@@ -54,11 +54,19 @@ export default function LoanDetail() {
       // Combinar los datos de mora con las cuotas del préstamo
       const loansWithMora = {
         ...loanData,
-        schedules: loanData.schedules.map((s, idx) => ({
-          ...s,
-          hasLateFee: schedulesWithMora[idx]?.hasLateFee || false,
-          lateFeeAmount: schedulesWithMora[idx]?.lateFeeAmount || 0,
-        }))
+        schedules: loanData.schedules.map((s, idx) => {
+          const moraInfo = schedulesWithMora[idx] || {};
+          return {
+            ...s,
+            hasLateFee: Boolean(moraInfo.hasLateFee),
+            lateFeeAmount: Number(moraInfo.lateFeeAmount ?? s.lateFeeAmount ?? 0),
+            remainingInstallment: moraInfo.remainingInstallment ?? s.remainingInstallment,
+            pendingTotal:
+              moraInfo.pendingTotal ??
+              (moraInfo.remainingInstallment ?? s.remainingInstallment ?? Number(s.installmentAmount)) +
+                Number(moraInfo.lateFeeAmount ?? s.lateFeeAmount ?? 0),
+          };
+        })
       };
       setLoan(loansWithMora);
       setStatement(statementData);
@@ -324,11 +332,10 @@ export default function LoanDetail() {
 
   function handleSelectPaymentMethod(method) {
     setPaymentMethod(method);
-    // Calcular el total a pagar = cuota + mora
-    const remaining = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount);
-    const cuota = isNaN(remaining) ? 0 : remaining;
-    const mora = selectedInstallment.lateFeeAmount || 0;
-    const total = cuota + mora;
+    // Usar pendingTotal del backend (ya incluye cuota restante + mora si aplica)
+    const total = selectedInstallment.pendingTotal !== undefined
+      ? Number(selectedInstallment.pendingTotal)
+      : (parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0) + (selectedInstallment.lateFeeAmount || 0);
     
     // Si es EFECTIVO, redondear el TOTAL; si no, usar el total exacto
     const initialAmount = method === 'EFECTIVO' ? roundCash(total) : total;
@@ -560,37 +567,25 @@ export default function LoanDetail() {
     return remainingCents / 100;
   };
   
-  // Para determinar si está pagada, usar redondeo (si saldo < 0.05, se considera pagada)
-  const isInstallmentPaid = (amount, paid) => {
-    const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
-    // Si saldo restante < 5 centavos, se considera pagada
-    if (remainingCents < 5) return true;
-    // Si monto pagado >= monto de cuota
-    if (paid >= amount) return true;
-    return false;
-  };
+  const normalizeAmount = (value, fallback = 0) =>
+    Number.isFinite(Number(value)) ? Number(value) : fallback;
 
-  // Saldo restante por cuota = monto de la cuota menos lo pagado a esa cuota
   const scheduleWithRemaining = (() => {
     if (!loan?.schedules) return [];
-    const paidByInstallment = new Map();
-    (statement?.payments || []).forEach((p) => {
-      if (!p.installmentId) return;
-      const paidPortion = Number(p.principalPaid || 0) + Number(p.interestPaid || 0);
-      paidByInstallment.set(
-        p.installmentId,
-        (paidByInstallment.get(p.installmentId) || 0) + paidPortion
-      );
-    });
     return loan.schedules.map((row) => {
-      const paid = paidByInstallment.get(row.id) || 0;
-      // Guardar el saldo ORIGINAL (sin redondear)
-      const remainingInstallment = remainingForInstallmentOriginal(row.installmentAmount, paid);
-      const isPaid = isInstallmentPaid(row.installmentAmount, paid);
+      const baseRemaining =
+        row.remainingInstallment !== undefined && row.remainingInstallment !== null
+          ? normalizeAmount(row.remainingInstallment)
+          : remainingForInstallmentOriginal(row.installmentAmount, 0);
+      const pendingTotal =
+        row.pendingTotal !== undefined && row.pendingTotal !== null
+          ? normalizeAmount(row.pendingTotal)
+          : baseRemaining + normalizeAmount(row.lateFeeAmount);
       return {
         ...row,
-        remainingInstallment: Number(remainingInstallment.toFixed(2)),
-        isPaid: isPaid,
+        remainingInstallment: Number(baseRemaining.toFixed(2)),
+        pendingTotal: Number(pendingTotal.toFixed(2)),
+        isPaid: row.isPaid === true,
       };
     });
   })();
@@ -600,13 +595,14 @@ export default function LoanDetail() {
     : 0;
   const lateFeeForSelected = selectedInstallment ? (selectedInstallment.lateFeeAmount || 0) : 0;
   
-  // Saldo de cuota: siempre ORIGINAL (sin redondear)
-  const displayInstallmentAmount = baseInstallmentAmount;
+  // Saldo pendiente = pendingTotal del backend (ya incluye cuota restante + mora si aplica)
+  // Si no hay pendingTotal, calcular manualmente
+  const rawTotal = selectedInstallment?.pendingTotal !== undefined
+    ? Number(selectedInstallment.pendingTotal)
+    : (baseInstallmentAmount + lateFeeForSelected);
   
-  // Total a pagar = cuota + mora
-  // Si EFECTIVO: redondear el TOTAL (no la cuota individual)
+  // Si EFECTIVO: redondear el TOTAL
   // Si otros métodos: total exacto sin redondear
-  const rawTotal = baseInstallmentAmount + lateFeeForSelected;
   const displayTotalToPay = paymentMethod === 'EFECTIVO'
     ? roundCash(rawTotal)
     : rawTotal;
@@ -688,8 +684,17 @@ export default function LoanDetail() {
               {scheduleWithRemaining.map((row) => {
                 const installmentAmount = parseFloat(row.installmentAmount);
                 const isPaid = row.isPaid === true;
-                // Nuevo: saldo pendiente = saldo restante + mora
-                const pendingTotal = row.pendingTotal !== undefined ? Number(row.pendingTotal) : (Number(row.remainingInstallment || 0) + (row.lateFeeAmount || 0));
+                const remainingInstallment = row.remainingInstallment !== undefined
+                  ? Number(row.remainingInstallment)
+                  : Math.max(
+                      0,
+                      (row.pendingTotal !== undefined
+                        ? Number(row.pendingTotal)
+                        : Number(row.installmentAmount || 0)) - Number(row.lateFeeAmount || 0)
+                    );
+                const pendingTotal = row.pendingTotal !== undefined
+                  ? Number(row.pendingTotal)
+                  : (remainingInstallment + (row.lateFeeAmount || 0));
 
                 return (
                   <tr key={row.id}>
@@ -875,18 +880,20 @@ export default function LoanDetail() {
             <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '1rem' }}>
               <div><strong>Fecha de Vencimiento:</strong> {formatDate(selectedInstallment.dueDate)}</div>
               <div>
-                <strong>Saldo pendiente (cuota + mora):</strong>{' '}
-                S/ {(selectedInstallment.pendingTotal !== undefined
-                  ? Number(selectedInstallment.pendingTotal)
-                  : (Number(selectedInstallment.remainingInstallment || selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0))).toFixed(2)}
+                <strong>Saldo pendiente:</strong>{' '}
+                S/ {rawTotal.toFixed(2)}
+                {lateFeeForSelected > 0 && ' (incluye mora)'}
               </div>
-              {selectedInstallment.lateFeeAmount > 0 && (
+              {lateFeeForSelected > 0 && (
                 <div style={{ marginTop: '0.5rem', color: '#dc3545' }}>
-                  <strong>Mora (1% fijo):</strong> S/ {(selectedInstallment.lateFeeAmount || 0).toFixed(2)}
+                  <strong>Mora (1% fijo):</strong> S/ {lateFeeForSelected.toFixed(2)}
+                  <br />
+                  <small style={{ color: '#666' }}>* Si pagas parcialmente, la mora se cancela</small>
                 </div>
               )}
               <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #ddd', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
                 <strong>Total a Pagar:</strong> S/ {displayTotalToPay.toFixed(2)}
+                {paymentMethod === 'EFECTIVO' && rawTotal !== displayTotalToPay && ' (redondeado)'}
               </div>
             </div>
 

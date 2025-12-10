@@ -183,11 +183,18 @@ router.get(
       
       // Calcular mora para cada cuota
       const schedulesWithMora = loan.schedules.map(schedule => {
-        const { hasLateFee, lateFeeAmount } = calculateInstallmentLateFee(schedule, loan.payments);
+        const {
+          hasLateFee,
+          lateFeeAmount,
+          remainingInstallment,
+          pendingTotal,
+        } = calculateInstallmentLateFee(schedule, loan.payments);
         return {
           ...schedule,
           hasLateFee,
           lateFeeAmount,
+          remainingInstallment,
+          pendingTotal,
         };
       });
       

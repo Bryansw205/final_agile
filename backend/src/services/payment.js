@@ -60,44 +60,43 @@ export function applyRounding(amount) {
  * Calcula la mora para una cuota específica.
  * Mora = 1% de la cuota, fija, se aplica UNA SOLA VEZ cuando vence
  * - No aumenta aunque pasen más meses sin pagar
- * - Solo desaparece cuando la mora se paga completamente
+ * - Si se hace CUALQUIER pago después del vencimiento, la mora se cancela/reinicia a 0
+ * - El saldo pendiente después de un pago parcial es solo lo que falta de la cuota (sin mora)
  */
 export function calculateInstallmentLateFee(schedule, payments) {
   const today = dayjs.tz(new Date(), TZ);
   const dueDate = dayjs.tz(schedule.dueDate, TZ);
-
-  // Si ya está pagada, no hay mora
-  if (schedule.isPaid) {
-    return { hasLateFee: false, lateFeeAmount: 0 };
-  }
-
-  // Si aún no está vencida, no hay mora
-  if (today.isBefore(dueDate) || today.isSame(dueDate, 'day')) {
-    return { hasLateFee: false, lateFeeAmount: 0 };
-  }
-
-  // Mora FIJA = 1% de la cuota (no acumulativa, no aumenta con el tiempo)
-  // Ejemplo: cuota S/94.56 → mora = 94.56 × 0.01 = S/0.95
-  // Total a pagar = S/95.51 (sin importar cuántos meses pasen)
   const installmentAmount = Number(schedule.installmentAmount);
-  const baseLateFee = round2(installmentAmount * 0.01);
   const paymentsForInstallment = (payments || []).filter(p => p.installmentId === schedule.id);
 
+  // Calcular lo pagado hacia la cuota (principal + interés)
   const paidTowardsInstallment = paymentsForInstallment.reduce(
     (sum, p) => sum + Number(p.principalPaid || 0) + Number(p.interestPaid || 0),
     0
   );
   const remainingInstallment = Math.max(0, round2(installmentAmount - paidTowardsInstallment));
 
-  const lateFeePaid = paymentsForInstallment.reduce(
-    (sum, p) => sum + Number(p.lateFeePaid || 0),
-    0
+  // Si aún no está vencida, no hay mora
+  if (today.isBefore(dueDate) || today.isSame(dueDate, 'day')) {
+    return { hasLateFee: false, lateFeeAmount: 0, remainingInstallment, pendingTotal: remainingInstallment };
+  }
+
+  // Verificar si hay CUALQUIER pago después del vencimiento
+  const paymentsAfterDue = paymentsForInstallment.filter(p => 
+    dayjs.tz(p.paymentDate, TZ).isAfter(dueDate)
   );
-  const outstandingLateFee = Math.max(0, round2(baseLateFee - lateFeePaid));
 
-  const pendingTotal = round2(remainingInstallment + outstandingLateFee);
+  // Si hay pagos después del vencimiento, la mora se cancela/reinicia a 0
+  if (paymentsAfterDue.length > 0) {
+    return { hasLateFee: false, lateFeeAmount: 0, remainingInstallment, pendingTotal: remainingInstallment };
+  }
 
-  return { hasLateFee: outstandingLateFee > 0, lateFeeAmount: outstandingLateFee, remainingInstallment, pendingTotal };
+  // Si NO hay pagos después del vencimiento, calcular mora
+  // Mora FIJA = 1% de la cuota (no acumulativa, no aumenta con el tiempo)
+  const baseLateFee = round2(installmentAmount * 0.01);
+  const pendingTotal = round2(remainingInstallment + baseLateFee);
+
+  return { hasLateFee: true, lateFeeAmount: baseLateFee, remainingInstallment, pendingTotal };
 }
 
 /**
@@ -410,19 +409,14 @@ export async function registerPayment({
   let pendingLoanPrincipal = pendingPrincipal;
 
   if (selectedInstallment) {
-    if (installmentPendingLateFee > 0 && remaining > 0) {
-      const installmentLateFeeCovered = Math.min(remaining, installmentPendingLateFee);
-      lateFeePaid = round2(lateFeePaid + installmentLateFeeCovered);
-      remaining = round2(remaining - installmentLateFeeCovered);
-      installmentPendingLateFee = round2(installmentPendingLateFee - installmentLateFeeCovered);
-      pendingLoanLateFee = Math.max(0, round2(pendingLoanLateFee - installmentLateFeeCovered));
-    }
-
     if (installmentPendingInterest > 0 && remaining > 0) {
       const installmentInterestCovered = Math.min(remaining, installmentPendingInterest);
       interestPaid = round2(interestPaid + installmentInterestCovered);
       remaining = round2(remaining - installmentInterestCovered);
-      installmentPendingInterest = round2(installmentPendingInterest - installmentInterestCovered);
+      installmentPendingInterest = Math.max(
+        0,
+        round2(installmentPendingInterest - installmentInterestCovered)
+      );
       pendingLoanInterest = Math.max(0, round2(pendingLoanInterest - installmentInterestCovered));
     }
 
@@ -430,8 +424,26 @@ export async function registerPayment({
       const installmentPrincipalCovered = Math.min(remaining, installmentPendingPrincipal);
       principalPaid = round2(principalPaid + installmentPrincipalCovered);
       remaining = round2(remaining - installmentPrincipalCovered);
-      installmentPendingPrincipal = round2(installmentPendingPrincipal - installmentPrincipalCovered);
+      installmentPendingPrincipal = Math.max(
+        0,
+        round2(installmentPendingPrincipal - installmentPrincipalCovered)
+      );
       pendingLoanPrincipal = Math.max(0, round2(pendingLoanPrincipal - installmentPrincipalCovered));
+    }
+
+    const basePendingCleared =
+      installmentPendingInterest <= OUTSTANDING_TOLERANCE &&
+      installmentPendingPrincipal <= OUTSTANDING_TOLERANCE;
+
+    if (basePendingCleared && installmentPendingLateFee > 0 && remaining > 0) {
+      const installmentLateFeeCovered = Math.min(remaining, installmentPendingLateFee);
+      lateFeePaid = round2(lateFeePaid + installmentLateFeeCovered);
+      remaining = round2(remaining - installmentLateFeeCovered);
+      installmentPendingLateFee = Math.max(
+        0,
+        round2(installmentPendingLateFee - installmentLateFeeCovered)
+      );
+      pendingLoanLateFee = Math.max(0, round2(pendingLoanLateFee - installmentLateFeeCovered));
     }
   }
 
