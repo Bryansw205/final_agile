@@ -460,9 +460,18 @@ router.post(
   requireAuth,
   param('id').isInt({ gt: 0 }),
   body('receiptType').isIn(['BOLETA', 'FACTURA']),
-  body('invoiceRuc').optional().isString(),
-  body('invoiceBusinessName').optional().isString(),
-  body('invoiceAddress').optional().isString(),
+  body('invoiceRuc')
+    .if((value, { req }) => req.body.receiptType === 'FACTURA')
+    .notEmpty().withMessage('invoiceRuc es requerido para FACTURA')
+    .isString(),
+  body('invoiceBusinessName')
+    .if((value, { req }) => req.body.receiptType === 'FACTURA')
+    .notEmpty().withMessage('invoiceBusinessName es requerido para FACTURA')
+    .isString(),
+  body('invoiceAddress')
+    .if((value, { req }) => req.body.receiptType === 'FACTURA')
+    .notEmpty().withMessage('invoiceAddress es requerido para FACTURA')
+    .isString(),
   handleValidation,
   async (req, res, next) => {
     try {
