@@ -475,8 +475,27 @@ router.post(
           invoiceRuc: true,
           invoiceBusinessName: true,
           invoiceAddress: true,
+          installmentId: true,
         },
       });
+
+      // Marcar la cuota como pagada si ya se cubrió el monto
+      if (updated.installmentId) {
+        const installment = await prisma.paymentSchedule.findUnique({
+          where: { id: updated.installmentId },
+        });
+        const paymentsForInstallment = await prisma.payment.findMany({
+          where: { installmentId: updated.installmentId },
+          select: { amount: true },
+        });
+        const totalPaid = paymentsForInstallment.reduce((sum, p) => sum + Number(p.amount), 0);
+        if (installment && totalPaid >= Number(installment.installmentAmount)) {
+          await prisma.paymentSchedule.update({
+            where: { id: installment.id },
+            data: { isPaid: true, remainingBalance: 0 },
+          });
+        }
+      }
 
       res.json({ success: true, payment: updated });
     } catch (error) {
