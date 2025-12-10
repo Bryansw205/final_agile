@@ -749,6 +749,8 @@ export default function LoanDetail() {
   const totalPagado = statement?.totals?.totalPaid || 0;
   const pendiente = statement?.totals?.pendingTotal || 0;
 
+  const displayPayments = statement?.payments?.filter((p) => p.receiptType) || [];
+
   const toCents = (v) => Math.round(Number(v || 0) * 100);
   
   // Calcula el saldo restante ORIGINAL (sin redondear)
@@ -947,7 +949,7 @@ export default function LoanDetail() {
         </div>
       </div>
 
-      {statement?.payments && statement.payments.length > 0 && (
+      {displayPayments.length > 0 && (
         <div className="card" style={{ marginTop: '2rem' }}>
           <h4 style={{ marginTop: 0 }}>Historial de Pagos</h4>
           <table className="table">
@@ -964,7 +966,7 @@ export default function LoanDetail() {
               </tr>
             </thead>
             <tbody>
-              {statement.payments.map((payment) => (
+              {displayPayments.map((payment) => (
                 <tr key={payment.id}>
                   <td>{new Date(payment.paymentDate).toLocaleString('es-PE')}</td>
                   <td>S/ {payment.amount.toFixed(2)}</td>
