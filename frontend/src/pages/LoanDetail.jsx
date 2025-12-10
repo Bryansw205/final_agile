@@ -400,12 +400,32 @@ export default function LoanDetail() {
     setError('');
   }
 
+  function handleSelectAllPendingInstallments() {
+    const pending = scheduleWithRemaining
+      .filter(s => !s.isPaid)
+      .sort((a, b) => a.installmentNumber - b.installmentNumber);
+    if (pending.length === 0) return;
+    setSelectedInstallments(new Set(pending.map(s => s.id)));
+    setError('');
+  }
+
+  function handleClearInstallmentSelection() {
+    setSelectedInstallments(new Set());
+    setAdvancePaymentAmount('');
+    setAdvancePaymentMethod('');
+    setError('');
+  }
+
+  function getSelectedAdvanceTotal() {
+    return scheduleWithRemaining
+      .filter(s => selectedInstallments.has(s.id) && !s.isPaid)
+      .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0);
+  }
+
   function handleSelectAdvancePaymentMethod(method) {
     setAdvancePaymentMethod(method);
     // Calcular total de cuotas seleccionadas
-    const total = scheduleWithRemaining
-      .filter(s => selectedInstallments.has(s.id) && !s.isPaid)
-      .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0);
+    const total = getSelectedAdvanceTotal();
     
     const initialAmount = method === 'EFECTIVO' ? roundCash(total) : total;
     setAdvancePaymentAmount(initialAmount.toFixed(2));
@@ -658,6 +678,16 @@ export default function LoanDetail() {
       return;
     }
 
+    const selectedTotal = getSelectedAdvanceTotal();
+    const expectedTotal = advancePaymentMethod === 'EFECTIVO'
+      ? Number(roundCash(selectedTotal).toFixed(2))
+      : Number(selectedTotal.toFixed(2));
+
+    if (Math.abs(amount - expectedTotal) > 0.01) {
+      setError(`El monto debe ser S/ ${expectedTotal.toFixed(2)} para las cuotas seleccionadas`);
+      return;
+    }
+
     if (!cashSession) {
       setError('Debe abrir una sesión de caja antes de registrar pagos');
       return;
@@ -665,7 +695,7 @@ export default function LoanDetail() {
 
     // Aplicar redondeo automático para efectivo
     const finalAmount = advancePaymentMethod === 'EFECTIVO'
-      ? Number(roundCash(amount).toFixed(2))
+      ? expectedTotal
       : amount;
 
     setProcessingPayment(true);
@@ -676,7 +706,7 @@ export default function LoanDetail() {
         const installmentIds = Array.from(selectedInstallments);
         const flowResponse = await apiPost('/flow/create-advance-payment', {
           loanId: parseInt(id),
-          amount,
+          amount: expectedTotal,
           email: 'cliente@example.com',
           installmentIds,
         });
@@ -779,6 +809,23 @@ export default function LoanDetail() {
       };
     });
   })();
+
+  const pendingInstallmentsList = scheduleWithRemaining
+    .filter((s) => !s.isPaid)
+    .sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+  const selectedInstallmentsList = pendingInstallmentsList.filter((s) =>
+    selectedInstallments.has(s.id)
+  );
+
+  const selectedInstallmentsTotal = selectedInstallmentsList.reduce(
+    (sum, s) => sum + (Number(s.pendingTotal) || 0),
+    0
+  );
+
+  const displayAdvanceTotal = advancePaymentMethod === 'EFECTIVO'
+    ? Number(roundCash(selectedInstallmentsTotal).toFixed(2))
+    : selectedInstallmentsTotal;
 
   const baseInstallmentAmount = selectedInstallment
     ? parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0
@@ -1260,16 +1307,26 @@ export default function LoanDetail() {
 
             {/* Cuotas pendientes - Ordenadas por número */}
             <div style={{ marginBottom: '1.5rem' }}>
-              <h5 style={{ marginBottom: '1rem', color: '#333' }}>Cuotas Pendientes</h5>
-              {scheduleWithRemaining.filter(s => !s.isPaid).length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <h5 style={{ margin: 0, color: '#333' }}>Cuotas Pendientes</h5>
+                {pendingInstallmentsList.length > 0 && (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button type="button" className="btn btn-sm" onClick={handleSelectAllPendingInstallments}>
+                      Seleccionar todas
+                    </button>
+                    <button type="button" className="btn btn-sm" onClick={handleClearInstallmentSelection}>
+                      Limpiar
+                    </button>
+                  </div>
+                )}
+              </div>
+              {pendingInstallmentsList.length === 0 ? (
                 <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#999' }}>
                   <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>✓ Todas las cuotas están pagadas</p>
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: '0.75rem', maxHeight: '450px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-                  {scheduleWithRemaining
-                    .filter(s => !s.isPaid)
-                    .sort((a, b) => a.installmentNumber - b.installmentNumber)
+                  {pendingInstallmentsList
                     .map((installment, idx) => {
                       const isSelected = selectedInstallments.has(installment.id);
                       const hasLateFee = installment.lateFeeAmount > 0;
@@ -1277,9 +1334,7 @@ export default function LoanDetail() {
                       const isOverdue = daysOverdue > 0;
 
                       // Calcular si esta cuota puede ser seleccionada (orden consecutivo)
-                      const pendingInstallments = scheduleWithRemaining
-                        .filter(s => !s.isPaid)
-                        .sort((a, b) => a.installmentNumber - b.installmentNumber);
+                      const pendingInstallments = pendingInstallmentsList;
                       const maxSelectedNumber = selectedInstallments.size > 0
                         ? Math.max(...Array.from(selectedInstallments).map(id => {
                             const inst = scheduleWithRemaining.find(s => s.id === id);
@@ -1401,10 +1456,7 @@ export default function LoanDetail() {
                   Cuotas seleccionadas: <strong>{selectedInstallments.size}</strong>
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>
-                  Total: S/ {scheduleWithRemaining
-                    .filter(s => selectedInstallments.has(s.id))
-                    .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0)
-                    .toFixed(2)}
+                  Total: S/ {displayAdvanceTotal.toFixed(2)}
                 </div>
               </div>
             )}
@@ -1524,20 +1576,15 @@ export default function LoanDetail() {
                 <strong>Cuotas seleccionadas ({selectedInstallments.size}):</strong>
               </div>
               <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '1rem' }}>
-                {scheduleWithRemaining
-                  .filter(s => selectedInstallments.has(s.id))
-                  .map(s => (
-                    <div key={s.id} style={{ padding: '0.5rem', backgroundColor: 'white', marginBottom: '0.5rem', borderRadius: '4px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Cuota #{s.installmentNumber}</span>
-                      <strong>S/ {Number(s.pendingTotal || s.installmentAmount).toFixed(2)}</strong>
-                    </div>
-                  ))}
+                {selectedInstallmentsList.map((s) => (
+                  <div key={s.id} style={{ padding: '0.5rem', backgroundColor: 'white', marginBottom: '0.5rem', borderRadius: '4px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Cuota #{s.installmentNumber}</span>
+                    <strong>S/ {Number(s.pendingTotal || s.installmentAmount).toFixed(2)}</strong>
+                  </div>
+                ))}
               </div>
               <div style={{ paddingTop: '1rem', borderTop: '1px solid #ddd', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
-                <strong>Total a Pagar:</strong> S/ {scheduleWithRemaining
-                  .filter(s => selectedInstallments.has(s.id))
-                  .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0)
-                  .toFixed(2)}
+                <strong>Total a Pagar:</strong> S/ {displayAdvanceTotal.toFixed(2)}
                 {advancePaymentMethod === 'EFECTIVO' && ' (se redondeará según normas)'}
               </div>
             </div>

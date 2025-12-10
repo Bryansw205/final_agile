@@ -8,7 +8,7 @@ import {
   getFlowStatusText,
   mapFlowPaymentMethod,
 } from '../services/flowService.js';
-import { registerPayment } from '../services/payment.js';
+import { calculateAdvancePaymentAmount, registerAdvancePayment, registerPayment } from '../services/payment.js';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -100,6 +100,98 @@ router.post(
   }
 );
 
+
+/**
+ * POST /flow/create-advance-payment
+ * Crea una orden de pago en Flow para adelantar varias cuotas
+ */
+router.post(
+  '/create-advance-payment',
+  requireAuth,
+  body('loanId').isInt({ gt: 0 }),
+  body('installmentIds').isArray({ min: 1 }),
+  body('installmentIds.*').isInt({ gt: 0 }),
+  body('email').isEmail(),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { loanId, email, installmentIds } = req.body;
+      const userId = req.user.id;
+
+      const loan = await prisma.loan.findUnique({
+        where: { id: Number(loanId) },
+        include: { client: true },
+      });
+
+      if (!loan) {
+        return res.status(404).json({ error: 'Pr?stamo no encontrado' });
+      }
+
+      const cashSession = await prisma.cashSession.findFirst({
+        where: { userId, isClosed: false },
+      });
+
+      if (!cashSession) {
+        return res.status(400).json({ error: 'Debe abrir una sesi?n de caja antes de registrar pagos' });
+      }
+
+      const calculation = await calculateAdvancePaymentAmount({
+        loanId: Number(loanId),
+        installmentIds: (installmentIds || []).map((id) => Number(id)),
+        registeredByUserId: userId,
+        cashSessionId: cashSession.id,
+      });
+
+      const amountToCharge = Number(calculation.totalOwed);
+
+      const commerceOrder = `ADV-LOAN-${loanId}-${Date.now()}`;
+      const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const ownerEmail = process.env.OWNER_EMAIL || email;
+
+      const flowPayment = await createFlowPayment({
+        amount: amountToCharge,
+        subject: `Adelanto pr?stamo #${loanId} (${calculation.selectedInstallments.length} cuotas) - ${loan.client.firstName} ${loan.client.lastName}`,
+        email: ownerEmail,
+        commerceOrder,
+        urlConfirmation: `${baseUrl}/flow/webhook`,
+        urlReturn: `${frontendUrl}/loans/${loanId}?from=flow`,
+        paymentMethod: 9,
+        optional: {
+          loanId,
+          userId,
+          installmentIds: calculation.selectedInstallments.map((s) => s.id),
+          cashSessionId: cashSession.id,
+          commerceOrder,
+          isAdvance: true,
+        },
+      });
+
+      if (!global.flowPaymentCache) global.flowPaymentCache = {};
+      global.flowPaymentCache[flowPayment.flowOrder] = {
+        loanId,
+        userId,
+        installmentIds: calculation.selectedInstallments.map((s) => s.id),
+        amount: amountToCharge,
+        cashSessionId: cashSession.id,
+        isAdvance: true,
+      };
+
+      res.json({
+        success: true,
+        paymentUrl: flowPayment.url,
+        token: flowPayment.token,
+        flowOrder: flowPayment.flowOrder,
+        commerceOrder,
+        amount: amountToCharge,
+      });
+    } catch (error) {
+      console.error('Error creando pago adelantado en Flow:', error);
+      next(error);
+    }
+  }
+);
+
 /**
  * GET /flow/payment-status
  * Obtiene el estado de un pago en Flow y lo registra si está pagado
@@ -124,15 +216,22 @@ router.get(
         // Primero intentar recuperar del optional
         let optional = status.optional;
         let installmentId = optional?.installmentId || null;
+        let installmentIds = Array.isArray(optional?.installmentIds)
+          ? optional.installmentIds.map((id) => Number(id))
+          : [];
         let cashSessionId = optional?.cashSessionId ? Number(optional.cashSessionId) : null;
         let registeredByUserId = optional?.userId ? Number(optional.userId) : userId;
+        const isAdvance = optional?.isAdvance === true || optional?.isAdvance === 'true';
 
-        // Si falta informaciÓn, intentar desde cache
+        // Si falta informaci?n, intentar desde cache
         if (status.flowOrder && global.flowPaymentCache) {
           const cached = global.flowPaymentCache[status.flowOrder];
           if (cached) {
-            console.log('🔍 Encontrado en cache:', cached);
+            console.log('?? Encontrado en cache:', cached);
             installmentId = installmentId || cached.installmentId || null;
+            if ((!installmentIds || installmentIds.length === 0) && cached.installmentIds) {
+              installmentIds = cached.installmentIds.map((id) => Number(id));
+            }
             optional = optional || cached;
             if (!cashSessionId && cached.cashSessionId) {
               cashSessionId = Number(cached.cashSessionId);
@@ -141,23 +240,26 @@ router.get(
               registeredByUserId = Number(cached.userId);
             }
           } else {
-            console.log('❌ No encontrado en cache para flowOrder:', status.flowOrder);
-            console.log('📦 Cache disponible:', Object.keys(global.flowPaymentCache || {}));
+            console.log('? No encontrado en cache para flowOrder:', status.flowOrder);
+            console.log('?? Cache disponible:', Object.keys(global.flowPaymentCache || {}));
           }
         }
 
-        console.log('📋 installmentId final:', installmentId, 'cashSessionId:', cashSessionId);
+        console.log('?? installmentId final:', installmentId, 'cashSessionId:', cashSessionId, 'installmentIds:', installmentIds);
+
 
         if (optional && optional.loanId) {
           const loanId = Number(optional.loanId);
+          const targetInstallmentIds = (installmentIds && installmentIds.length > 0)
+            ? installmentIds
+            : (installmentId ? [Number(installmentId)] : []);
 
           if (!cashSessionId) {
-            return res.status(400).json({ error: 'No hay sesión de caja abierta para registrar el pago de Flow' });
+            return res.status(400).json({ error: 'No hay sesi?n de caja abierta para registrar el pago de Flow' });
           }
 
-          console.log('🎯 Registrando pago:', { loanId, registeredByUserId, installmentId, cashSessionId, flowOrder: status.flowOrder });
+          console.log('?? Registrando pago:', { loanId, registeredByUserId, installmentId, installmentIds: targetInstallmentIds, cashSessionId, flowOrder: status.flowOrder });
 
-          // Verificar si ya existe un pago con esta referencia
           const existingPayment = await prisma.payment.findFirst({
             where: {
               externalReference: status.flowOrder.toString(),
@@ -165,33 +267,37 @@ router.get(
           });
 
           if (!existingPayment) {
-            console.log('📦 Registrando pago nuevo...');
-            
-            // Obtener el método de pago real desde Flow
+            console.log('?? Registrando pago nuevo...');
             const realPaymentMethod = mapFlowPaymentMethod(status.paymentMethod);
-            console.log('💳 Método de pago mapeado: Flow:', status.paymentMethod, '-> BD:', realPaymentMethod);
-            
-            // Registrar el pago en el sistema
-            const payment = await registerPayment({
-              loanId,
-              amount: status.amount,
-              paymentMethod: realPaymentMethod,
-              registeredByUserId,
-              cashSessionId,
-              installmentId,
-              externalReference: status.flowOrder.toString(),
-            });
+            console.log('?? M?todo de pago mapeado: Flow:', status.paymentMethod, '-> BD:', realPaymentMethod);
 
-            console.log(`✅ Pago Flow registrado:`, {
-              paymentId: payment.id,
-              flowOrder: status.flowOrder,
-              paymentMethod: realPaymentMethod,
-              installmentId,
-            });
+            if (targetInstallmentIds && targetInstallmentIds.length > 0) {
+              await registerAdvancePayment({
+                loanId,
+                amount: status.amount,
+                paymentMethod: realPaymentMethod,
+                registeredByUserId,
+                cashSessionId,
+                installmentIds: targetInstallmentIds,
+                externalReference: status.flowOrder.toString(),
+              });
+            } else {
+              await registerPayment({
+                loanId,
+                amount: status.amount,
+                paymentMethod: realPaymentMethod,
+                registeredByUserId,
+                cashSessionId,
+                installmentId,
+                externalReference: status.flowOrder.toString(),
+              });
+            }
           } else {
-            console.log(`ℹ️ Pago ya existía: ${status.flowOrder}`);
+            console.log(`?? Pago ya exist?a: ${status.flowOrder}`);
           }
         } else {
+          console.error('? No se pudo extraer loanId del optional:', optional);
+} else {
           console.error('❌ No se pudo extraer loanId del optional:', optional);
         }
       }
@@ -288,32 +394,46 @@ router.post(
         // Primero intentar recuperar del optional
         let optional = paymentStatus.optional;
         let installmentId = optional?.installmentId || null;
+        let installmentIds = Array.isArray(optional?.installmentIds)
+          ? optional.installmentIds.map((id) => Number(id))
+          : [];
         let userId = optional?.userId ? Number(optional.userId) : null;
         let cashSessionId = optional?.cashSessionId ? Number(optional.cashSessionId) : null;
+        const isAdvance = optional?.isAdvance === true || optional?.isAdvance === 'true';
 
         // Si no hay datos en optional, intentar desde cache
         if ((!optional || !optional.loanId) && paymentStatus.flowOrder && global.flowPaymentCache) {
           const cached = global.flowPaymentCache[paymentStatus.flowOrder];
           if (cached) {
-            console.log('🔍 Encontrado en cache (webhook):', cached);
+            console.log('?? Encontrado en cache (webhook):', cached);
             installmentId = cached.installmentId;
+            if ((!installmentIds || installmentIds.length === 0) && cached.installmentIds) {
+              installmentIds = cached.installmentIds.map((id) => Number(id));
+            }
             userId = cached.userId;
             cashSessionId = cashSessionId || (cached.cashSessionId ? Number(cached.cashSessionId) : null);
             optional = cached;
           } else {
-            console.log('❌ No encontrado en cache para flowOrder:', paymentStatus.flowOrder);
-            console.log('📦 Cache disponible:', Object.keys(global.flowPaymentCache || {}));
+            console.log('? No encontrado en cache para flowOrder:', paymentStatus.flowOrder);
+            console.log('?? Cache disponible:', Object.keys(global.flowPaymentCache || {}));
           }
         }
 
-        console.log('📋 Datos del webhook:', { optional, installmentId, userId, cashSessionId });
+        console.log('?? Datos del webhook:', { optional, installmentId, installmentIds, userId, cashSessionId });
 
         if (optional && optional.loanId) {
           const loanId = Number(optional.loanId);
+          const targetInstallmentIds = (installmentIds && installmentIds.length > 0)
+            ? installmentIds
+            : (installmentId ? [Number(installmentId)] : []);
 
-          console.log('🎯 Webhook registrando:', { loanId, userId, installmentId, cashSessionId, flowOrder: paymentStatus.flowOrder });
+          if (!cashSessionId) {
+            console.error('? No hay sesi?n de caja abierta para registrar el pago de Flow (webhook)');
+            return res.status(200).send('OK');
+          }
 
-          // Verificar si ya existe un pago con esta referencia
+          console.log('?? Webhook registrando:', { loanId, userId, installmentId, installmentIds: targetInstallmentIds, cashSessionId, flowOrder: paymentStatus.flowOrder });
+
           const existingPayment = await prisma.payment.findFirst({
             where: {
               externalReference: paymentStatus.flowOrder.toString(),
@@ -321,34 +441,37 @@ router.post(
           });
 
           if (!existingPayment) {
-            console.log('📦 Registrando pago nuevo...');
+            console.log('?? Registrando pago nuevo...');
             
-            // Obtener el método de pago real desde Flow
             const realPaymentMethod = mapFlowPaymentMethod(paymentStatus.paymentMethod);
-            console.log('💳 Método de pago mapeado: Flow:', paymentStatus.paymentMethod, '-> BD:', realPaymentMethod);
+            console.log('?? M?todo de pago mapeado: Flow:', paymentStatus.paymentMethod, '-> BD:', realPaymentMethod);
             
-            // Registrar el pago en el sistema
-            const payment = await registerPayment({
-              loanId,
-              amount: paymentStatus.amount,
-              paymentMethod: realPaymentMethod,
-              registeredByUserId: userId,
-              cashSessionId,
-              installmentId,
-              externalReference: paymentStatus.flowOrder.toString(),
-            });
-
-            console.log(`✅ Pago Flow registrado:`, {
-              paymentId: payment.id,
-              flowOrder: paymentStatus.flowOrder,
-              paymentMethod: realPaymentMethod,
-              installmentId,
-            });
+            if (targetInstallmentIds && targetInstallmentIds.length > 0) {
+              await registerAdvancePayment({
+                loanId,
+                amount: paymentStatus.amount,
+                paymentMethod: realPaymentMethod,
+                registeredByUserId: userId,
+                cashSessionId,
+                installmentIds: targetInstallmentIds,
+                externalReference: paymentStatus.flowOrder.toString(),
+              });
+            } else {
+              await registerPayment({
+                loanId,
+                amount: paymentStatus.amount,
+                paymentMethod: realPaymentMethod,
+                registeredByUserId: userId,
+                cashSessionId,
+                installmentId,
+                externalReference: paymentStatus.flowOrder.toString(),
+              });
+            }
           } else {
-            console.log(`ℹ️ Pago ya existía: ${paymentStatus.flowOrder}`);
+            console.log(`?? Pago ya exist?a: ${paymentStatus.flowOrder}`);
           }
         } else {
-          console.error('❌ No se pudo extraer loanId del optional del webhook:', optional);
+          console.error('No se pudo extraer loanId del optional del webhook:', optional);
         }
       } else {
         console.log(`ℹ️ Pago Flow con estado ${paymentStatus.status}: ${getFlowStatusText(paymentStatus.status)}`);
