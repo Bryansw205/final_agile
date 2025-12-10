@@ -454,23 +454,6 @@ export async function registerAdvancePayment({
 
         paymentsCreated.push(newPayment);
 
-        const allPaymentsNow = await tx.payment.findMany({
-          where: { installmentId: installment.id },
-        });
-
-        const lateFeeDetailsNow = calculateInstallmentLateFee(installment, allPaymentsNow);
-        const outstandingAmount = Number(lateFeeDetailsNow.pendingTotal || 0);
-
-        if (outstandingAmount <= OUTSTANDING_TOLERANCE) {
-          await tx.paymentSchedule.update({
-            where: { id: installment.id },
-            data: {
-              isPaid: true,
-              remainingBalance: 0,
-            },
-          });
-        }
-
         if (installmentLateFeePaid > 0) {
           let remainingLateFee = installmentLateFeePaid;
           const lateFees = await tx.lateFee.findMany({
@@ -537,7 +520,7 @@ export async function registerPayment({
   cashSessionId,
   externalReference,
   installmentId, // ID de la cuota específica a pagar
-  receiptType = 'BOLETA', // Tipo de comprobante (BOLETA o FACTURA)
+  receiptType = null, // Tipo de comprobante (BOLETA o FACTURA)
 }) {
   console.log('📝 registerPayment llamado con:', {
     loanId,
@@ -904,17 +887,7 @@ export async function registerPayment({
           shouldMarkAsPaid,
         });
 
-        // Solo marcar como pagada si el total pagado cubre el monto exacto (sin redondear)
-        if (shouldMarkAsPaid) {
-          await tx.paymentSchedule.update({
-            where: { id: installmentId },
-            data: { 
-              isPaid: true,
-              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
-            },
-          });
-          console.log('✅ Cuota marcada como pagada:', installmentId);
-        } else {
+      } else {
           console.log('⏳ Cuota aún no completamente pagada');
         }
       } else {
