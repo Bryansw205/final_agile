@@ -247,6 +247,11 @@ async function buildAdvancePaymentContext({
   for (const selectedInstallment of selectedInstallments) {
     const previousInstallments = loan.schedules.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
     for (const prevInstallment of previousInstallments) {
+      // Si la cuota anterior tambiÇ¸n estÇ­ incluida en la selecciÇün actual, se pagarÇ­ en la misma operaciÇün
+      if (normalizedInstallmentIds.includes(prevInstallment.id)) {
+        continue;
+      }
+
       if (prevInstallment.isPaid === false) {
         const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
         const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);

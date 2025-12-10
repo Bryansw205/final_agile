@@ -297,9 +297,7 @@ router.get(
           }
         } else {
           console.error('? No se pudo extraer loanId del optional:', optional);
-} else {
-          console.error('❌ No se pudo extraer loanId del optional:', optional);
-        }
+}
       }
 
       res.json({
