@@ -31,6 +31,11 @@ router.post(
       const { loanId, amount, paymentMethod, cashSessionId, installmentId, externalReference } = req.body;
       const registeredByUserId = req.user.id;
 
+      // Validación: Si es pago FLOW, externalReference es requerido
+      if (paymentMethod === 'FLOW' && !externalReference) {
+        return res.status(400).json({ error: 'Para pagos con Flow, se requiere externalReference' });
+      }
+
       if (
         paymentMethod === 'EFECTIVO' &&
         (Math.round(Number(amount) * 100) % 10 !== 0)
@@ -372,6 +377,11 @@ router.post(
     try {
       const { loanId, amount, paymentMethod, cashSessionId, installmentIds, externalReference } = req.body;
       const registeredByUserId = req.user.id;
+
+      // Validación: Si es pago FLOW, externalReference es requerido
+      if (paymentMethod === 'FLOW' && !externalReference) {
+        return res.status(400).json({ error: 'Para pagos con Flow, se requiere externalReference' });
+      }
 
       if (
         paymentMethod === 'EFECTIVO' &&
