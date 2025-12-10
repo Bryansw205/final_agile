@@ -164,19 +164,8 @@ export default function LoanDetail() {
             if (pollInterval) clearInterval(pollInterval);
             console.log('✅ Pago Flow exitoso detectado:', flowPayments[0]);
             
-            // Cerrar ventana de Flow si está abierta
-            try {
-              if (localStorage.getItem('flowWindowOpen') === 'true') {
-                const flowWindow = window.opener;
-                if (flowWindow && !flowWindow.closed) {
-                  flowWindow.close();
-                }
-              }
-            } catch (e) {
-              console.log('No se pudo cerrar ventana de Flow (probablemente en diferente dominio)');
-            }
-            localStorage.removeItem('flowWindowOpen');
-            localStorage.removeItem('flowLoanId');
+            // Limpiar parámetros de URL
+            window.history.replaceState({}, document.title, `/loans/${id}`);
             
             // Actualizar estado
             setSuccess('¡Pago con Flow realizado exitosamente!');
@@ -591,11 +580,7 @@ export default function LoanDetail() {
         });
 
         // Abrir Flow en una nueva ventana/pestaña
-        const flowWindow = window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
-        
-        // Guardar referencia a la ventana en estado local para poder cerrarla después
-        localStorage.setItem('flowWindowOpen', 'true');
-        localStorage.setItem('flowLoanId', String(id));
+        window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
         
         // Cerrar modal de pago
         handleClosePaymentModal();
@@ -697,11 +682,7 @@ export default function LoanDetail() {
         });
         
         // Abrir Flow en una nueva ventana/pestaña
-        const flowWindow = window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
-        
-        // Guardar referencia a la ventana
-        localStorage.setItem('flowWindowOpen', 'true');
-        localStorage.setItem('flowLoanId', String(id));
+        window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
         
         // Cerrar modal de pago adelantado
         handleCloseAdvancePaymentMode();
