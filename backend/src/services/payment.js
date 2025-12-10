@@ -366,13 +366,21 @@ export async function registerAdvancePayment({
     (a, b) => a.installmentNumber - b.installmentNumber
   );
 
-  const receiptNumber = generateReceiptNumber();
+  // Usar un numero base para este adelanto y garantizar unicidad por fila
+  const receiptNumberBase = generateReceiptNumber();
   let remaining = paymentAmount;
   const paymentsCreated = [];
 
   const payment = await prisma.$transaction(async (tx) => {
-    for (const installment of orderedInstallments) {
+    for (let i = 0; i < orderedInstallments.length; i += 1) {
+      const installment = orderedInstallments[i];
       if (remaining <= 0) break;
+      // Sufijar el numero de recibo cuando hay multiples filas para cumplir la
+      // restriccion unica en BD y mantener la relacion con el mismo adelanto.
+      const receiptNumber =
+        orderedInstallments.length > 1
+          ? `${receiptNumberBase}-${i + 1}`
+          : receiptNumberBase;
 
       const paymentsForInstallment = await tx.payment.findMany({
         where: { installmentId: installment.id },
