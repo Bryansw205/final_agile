@@ -251,14 +251,25 @@ router.post(
   '/webhook',
   async (req, res, next) => {
     try {
-      const { token } = req.body;
+      // Flow envía los datos como form data en req.body
+      // Puede ser { token } o { token: "..." }
+      let token = req.body?.token;
+      
+      // Si no viene en body, intentar desde query (algunos webhooks lo envían así)
+      if (!token) {
+        token = req.query?.token;
+      }
+
+      console.log('📨 Webhook Flow recibido - body:', JSON.stringify(req.body), 'query:', req.query);
 
       if (!token) {
-        console.error('❌ Webhook Flow: Token no recibido');
+        console.error('❌ Webhook Flow: Token no recibido en body ni en query');
+        console.error('   Body:', req.body);
+        console.error('   Query:', req.query);
         return res.status(200).send('OK'); // Responder OK para que Flow no reintente
       }
 
-      console.log('📨 Webhook Flow recibido:', { token });
+      console.log('✅ Webhook Flow: Token recibido:', token);
 
       // Obtener estado del pago
       const paymentStatus = await getFlowPaymentStatus(token);

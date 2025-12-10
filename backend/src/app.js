@@ -36,6 +36,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Para parsear form data de Flow webhook
 app.use(morgan('dev'));
 
 // Log de requests
