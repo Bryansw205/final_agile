@@ -246,6 +246,7 @@ async function buildAdvancePaymentContext({
   }
 
   if (enforcePreviousPaid) {
+    if (enforcePreviousPaid) {
     for (const selectedInstallment of selectedInstallments) {
       const previousInstallments = loan.schedules.filter(
         (s) => s.installmentNumber < selectedInstallment.installmentNumber
@@ -253,8 +254,35 @@ async function buildAdvancePaymentContext({
       for (const prevInstallment of previousInstallments) {
         // Si la cuota anterior tambi?n est? incluida en la selecci?n actual, se pagar? en la misma operaci?n
         if (normalizedInstallmentIds.includes(prevInstallment.id)) {
+          console.log('[ADVANCE] Saltando validaci?n de cuota previa porque est? seleccionada en el mismo pago:', {
+            selectedInstallment: selectedInstallment.installmentNumber,
+            previousInstallment: prevInstallment.installmentNumber,
+          });
           continue;
         }
+
+        if (prevInstallment.isPaid === false) {
+          const paymentsForPrevious = loan.payments.filter((p) => p.installmentId === prevInstallment.id);
+          const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
+          const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
+
+          console.log('[ADVANCE] Validando cuota previa pendiente:', {
+            targetInstallment: selectedInstallment.installmentNumber,
+            previousInstallment: prevInstallment.installmentNumber,
+            previousOutstanding: previousOutstanding.toFixed(2),
+            tolerance: OUTSTANDING_TOLERANCE,
+            enforcePreviousPaid,
+          });
+
+          if (previousOutstanding > OUTSTANDING_TOLERANCE) {
+            throw new Error(
+              `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
+            );
+          }
+        }
+      }
+    }
+  }
 
         if (prevInstallment.isPaid === false) {
           const paymentsForPrevious = loan.payments.filter((p) => p.installmentId === prevInstallment.id);
