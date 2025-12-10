@@ -90,7 +90,15 @@ export function calculateInstallmentLateFee(schedule, payments) {
   const installmentAmount = Number(schedule.installmentAmount);
   const lateFeeAmount = round2(installmentAmount * 0.01);
 
-  return { hasLateFee: true, lateFeeAmount };
+  // Nuevo: saldo pendiente = saldo restante + mora
+  let remainingInstallment = installmentAmount;
+  if (payments && payments.length > 0) {
+    // Sumar todos los pagos hechos a esta cuota
+    const paid = payments.filter(p => p.installmentId === schedule.id).reduce((sum, p) => sum + Number(p.amount), 0);
+    remainingInstallment = round2(installmentAmount - paid);
+  }
+  const pendingTotal = round2(remainingInstallment + lateFeeAmount);
+  return { hasLateFee: true, lateFeeAmount, remainingInstallment, pendingTotal };
 }
 
 /**
@@ -439,20 +447,19 @@ export async function registerPayment({
 
       if (installment) {
         const installmentAmount = Number(installment.installmentAmount);
-        
         // Obtener TODOS los pagos para esta cuota (INCLUYENDO el que acaba de crearse)
         const allPaymentsForInstallment = await tx.payment.findMany({
           where: { installmentId },
         });
 
         const totalPaid = allPaymentsForInstallment.reduce((sum, p) => sum + Number(p.amount), 0);
-        
+
         console.log('📊 Pagos encontrados para cuota:', {
           installmentId,
           totalPaid,
           paymentCount: allPaymentsForInstallment.length
         });
-        
+
         // Calcular mora solo si la cuota está vencida
         const today = dayjs.tz(new Date(), TZ);
         const dueDate = dayjs.tz(installment.dueDate, TZ);
@@ -471,13 +478,14 @@ export async function registerPayment({
             const daysLate = today.diff(dueDate, 'day');
             const periodsLate = Math.floor(daysLate / 30);
             if (periodsLate > 0) {
-              lateFeeAmount = round2(installmentAmount * (0.01 * periodsLate));
+              lateFeeAmount = Number((installmentAmount * (0.01 * periodsLate)).toFixed(2));
             }
           }
         }
 
-        const totalAmountDue = round2(installmentAmount + lateFeeAmount);
-        
+        // NO redondear el total a pagar, comparar con decimales exactos
+        const totalAmountDue = Number((installmentAmount + lateFeeAmount).toFixed(2));
+
         console.log('💰 Comparación de montos:', {
           installmentId,
           installmentAmount,
@@ -486,8 +494,8 @@ export async function registerPayment({
           totalPaid,
           shouldMarkAsPaid: totalPaid >= totalAmountDue
         });
-        
-        // Si se pagó el monto completo o más (incluyendo mora), marcar como pagada
+
+        // Solo marcar como pagada si el total pagado cubre el monto exacto (sin redondear)
         if (totalPaid >= totalAmountDue) {
           await tx.paymentSchedule.update({
             where: { id: installmentId },

@@ -5,40 +5,17 @@ import { apiGet, apiPost, apiDownload, apiFileUrl } from '../lib/api.js';
 import { formatDate } from '../lib/date.js';
 
 /**
- * Redondeo de Banquero (Redondeo al Par Más Cercano)
- * Si el dígito anterior al 0.05 es par, redondea hacia abajo
- * Si es impar, redondea hacia arriba para que el resultado sea par
- * Reglas:
- * - Si saldo < 0.05: redondea a 0 (cuota considerada pagada)
- * - Si saldo >= 0.05: redondea a 0.10
+ * Redondeo para efectivo en Perú
+ * Redondea al múltiplo de 0.10 más cercano
+ * Ejemplos:
+ *   95.51 -> 95.50
+ *   95.55 -> 95.60 (redondeo de banquero: .55 -> .60 porque 5 es impar)
+ *   95.54 -> 95.50
+ *   95.56 -> 95.60
  */
 function roundCash(amount) {
-  const cents = Math.round((amount % 1) * 100);
-  const integerPart = Math.floor(amount);
-
-  // Si los centavos son menores a 5, redondea hacia abajo (condonar)
-  if (cents < 5) return integerPart;
-
-  // Si los centavos son >= 5, redondea hacia arriba a 0.10
-  if (cents >= 5 && cents <= 9) return integerPart + 0.10;
-
-  // Para centavos 10-99, aplicar redondeo de banquero
-  const decimalPart = Math.floor(cents / 10) * 10;
-  const remainder = cents % 10;
-
-  if (remainder < 5) {
-    // Redondea hacia abajo al múltiplo de 10 anterior (redondeo de banquero)
-    return integerPart + (decimalPart / 100);
-  } else if (remainder > 5) {
-    // Redondea hacia arriba
-    return integerPart + ((decimalPart + 10) / 100);
-  } else {
-    // remainder === 5: Redondeo de banquero (al par más cercano)
-    const isEven = (decimalPart / 10) % 2 === 0;
-    return isEven 
-      ? integerPart + (decimalPart / 100)  // Mantiene decimal par
-      : integerPart + ((decimalPart + 10) / 100);  // Redondea hacia par
-  }
+  // Redondear al múltiplo de 0.10 más cercano
+  return Math.round(amount * 10) / 10;
 }
 
 export default function LoanDetail() {
@@ -51,9 +28,10 @@ export default function LoanDetail() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStep, setPaymentStep] = useState(1); // 1 = seleccionar método, 2 = detalles y monto
   const [selectedInstallment, setSelectedInstallment] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('EFECTIVO');
+  const [paymentMethod, setPaymentMethod] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [cashSession, setCashSession] = useState(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -329,7 +307,6 @@ export default function LoanDetail() {
   function handleOpenPaymentModal(installment) {
     console.log('handleOpenPaymentModal called', installment);
     console.log('cashSession:', cashSession);
-    console.log('paymentMethod:', paymentMethod);
 
     if (!cashSession) {
       setError('Debe abrir una sesión de caja antes de registrar pagos');
@@ -337,31 +314,44 @@ export default function LoanDetail() {
     }
     
     setSelectedInstallment(installment);
-    // Convertir a número y redondear a múltiplos de 0.10 para efectivo tomando el saldo pendiente
-    const remaining = parseFloat(installment.remainingInstallment ?? installment.installmentAmount);
-    const amount = isNaN(remaining) ? 0 : remaining;
-    const initialAmount = roundCash(amount);
-    setPaymentAmount(initialAmount.toFixed(2));
+    setPaymentMethod(''); // Reset para que elija
+    setPaymentAmount('');
+    setPaymentStep(1); // Empezar en paso 1: seleccionar método
     setShowPaymentModal(true);
     setError('');
     setSuccess('');
+  }
+
+  function handleSelectPaymentMethod(method) {
+    setPaymentMethod(method);
+    // Calcular el total a pagar = cuota + mora
+    const remaining = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount);
+    const cuota = isNaN(remaining) ? 0 : remaining;
+    const mora = selectedInstallment.lateFeeAmount || 0;
+    const total = cuota + mora;
+    
+    // Si es EFECTIVO, redondear el TOTAL; si no, usar el total exacto
+    const initialAmount = method === 'EFECTIVO' ? roundCash(total) : total;
+    setPaymentAmount(initialAmount.toFixed(2));
+    setPaymentStep(2); // Ir al paso 2: detalles y monto
+  }
+
+  function handleBackToMethodSelection() {
+    setPaymentStep(1);
+    setPaymentMethod('');
+    setPaymentAmount('');
   }
 
   function handleClosePaymentModal() {
     setShowPaymentModal(false);
     setSelectedInstallment(null);
     setPaymentAmount('');
-    setPaymentMethod('EFECTIVO');
+    setPaymentMethod('');
+    setPaymentStep(1);
   }
 
-  function handlePaymentMethodChange(e) {
-    const method = e.target.value;
-    setPaymentMethod(method);
-    if (method === 'EFECTIVO') {
-      const raw = parseFloat(paymentAmount || baseInstallmentAmount || 0) || 0;
-      const rounded = roundCash(raw);
-      setPaymentAmount(rounded.toFixed(2));
-    }
+  function handlePaymentAmountChange(e) {
+    setPaymentAmount(e.target.value);
   }
 
   function handleOpenReceiptModal(payment) {
@@ -442,6 +432,15 @@ export default function LoanDetail() {
       return;
     }
 
+    // Validar que en EFECTIVO el monto sea múltiplo de S/ 0.10
+    if (paymentMethod === 'EFECTIVO') {
+      const cents = Math.round(amount * 100);
+      if (cents % 10 !== 0) {
+        setError('En efectivo solo se aceptan múltiplos de S/ 0.10');
+        return;
+      }
+    }
+
     // Validar que todas las cuotas anteriores estén pagadas (cuotas seguidas)
     const previousInstallments = scheduleWithRemaining.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
     const firstUnpaid = previousInstallments.find(s => s.isPaid !== true);
@@ -451,8 +450,12 @@ export default function LoanDetail() {
     }
 
     const remainingBase = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0;
-    if (amount > remainingBase) {
-      setError(`El monto no puede ser mayor a S/ ${remainingBase.toFixed(2)}`);
+    const moraBase = selectedInstallment.lateFeeAmount || 0;
+    const totalBase = remainingBase + moraBase;
+    // Monto máximo = total (cuota + mora), redondeado si es EFECTIVO
+    const maxAllowed = paymentMethod === 'EFECTIVO' ? roundCash(totalBase) : totalBase;
+    if (amount > maxAllowed) {
+      setError(`El monto no puede ser mayor a S/ ${maxAllowed.toFixed(2)}`);
       return;
     }
 
@@ -550,16 +553,21 @@ export default function LoanDetail() {
   const pendiente = statement?.totals?.pendingTotal || 0;
 
   const toCents = (v) => Math.round(Number(v || 0) * 100);
-  const remainingForInstallment = (amount, paid) => {
+  
+  // Calcula el saldo restante ORIGINAL (sin redondear)
+  const remainingForInstallmentOriginal = (amount, paid) => {
     const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
-    // Si saldo restante < 0.05 (5 centavos), se redondea a 0 y se considera pagado
-    // Si saldo restante >= 0.05, se redondea a 0.10 usando redondeo de banquero
-    if (remainingCents < 5) {
-      return 0; // Cuota considerada como pagada
-    }
-    // Convertir a decimal y redondear a múltiplo de 0.10
-    const remainingAmount = remainingCents / 100;
-    return Number(roundCash(remainingAmount).toFixed(2));
+    return remainingCents / 100;
+  };
+  
+  // Para determinar si está pagada, usar redondeo (si saldo < 0.05, se considera pagada)
+  const isInstallmentPaid = (amount, paid) => {
+    const remainingCents = Math.max(0, toCents(amount) - toCents(paid));
+    // Si saldo restante < 5 centavos, se considera pagada
+    if (remainingCents < 5) return true;
+    // Si monto pagado >= monto de cuota
+    if (paid >= amount) return true;
+    return false;
   };
 
   // Saldo restante por cuota = monto de la cuota menos lo pagado a esa cuota
@@ -576,10 +584,9 @@ export default function LoanDetail() {
     });
     return loan.schedules.map((row) => {
       const paid = paidByInstallment.get(row.id) || 0;
-      const remainingInstallment = remainingForInstallment(row.installmentAmount, paid);
-      // Una cuota está pagada si el saldo restante es 0 (por redondeo de banquero)
-      // o si el monto pagado es >= al monto de la cuota
-      const isPaid = remainingInstallment === 0 || paid >= row.installmentAmount;
+      // Guardar el saldo ORIGINAL (sin redondear)
+      const remainingInstallment = remainingForInstallmentOriginal(row.installmentAmount, paid);
+      const isPaid = isInstallmentPaid(row.installmentAmount, paid);
       return {
         ...row,
         remainingInstallment: Number(remainingInstallment.toFixed(2)),
@@ -592,10 +599,20 @@ export default function LoanDetail() {
     ? parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0
     : 0;
   const lateFeeForSelected = selectedInstallment ? (selectedInstallment.lateFeeAmount || 0) : 0;
-  const displayInstallmentAmount = paymentMethod === 'EFECTIVO'
-    ? roundCash(baseInstallmentAmount)
-    : baseInstallmentAmount;
-  const displayTotalToPay = displayInstallmentAmount + lateFeeForSelected;
+  
+  // Saldo de cuota: siempre ORIGINAL (sin redondear)
+  const displayInstallmentAmount = baseInstallmentAmount;
+  
+  // Total a pagar = cuota + mora
+  // Si EFECTIVO: redondear el TOTAL (no la cuota individual)
+  // Si otros métodos: total exacto sin redondear
+  const rawTotal = baseInstallmentAmount + lateFeeForSelected;
+  const displayTotalToPay = paymentMethod === 'EFECTIVO'
+    ? roundCash(rawTotal)
+    : rawTotal;
+  
+  // Monto máximo = total a pagar (ya redondeado si es efectivo)
+  const maxPaymentAmount = displayTotalToPay;
 
   return (
     <div className="section">
@@ -671,6 +688,8 @@ export default function LoanDetail() {
               {scheduleWithRemaining.map((row) => {
                 const installmentAmount = parseFloat(row.installmentAmount);
                 const isPaid = row.isPaid === true;
+                // Nuevo: saldo pendiente = saldo restante + mora
+                const pendingTotal = row.pendingTotal !== undefined ? Number(row.pendingTotal) : (Number(row.remainingInstallment || 0) + (row.lateFeeAmount || 0));
 
                 return (
                   <tr key={row.id}>
@@ -680,7 +699,7 @@ export default function LoanDetail() {
                     <td>S/ {parseFloat(row.interestAmount).toFixed(2)}</td>
                     <td>S/ {parseFloat(row.principalAmount).toFixed(2)}</td>
                     <td>S/ {parseFloat(row.remainingBalance).toFixed(2)}</td>
-                    <td>S/ {Number(row.remainingInstallment || 0).toFixed(2)}</td>
+                    <td>S/ {pendingTotal.toFixed(2)}</td>
                     <td>
                       {row.hasLateFee ? (
                         <span className="badge badge-red">✓</span>
@@ -763,11 +782,89 @@ export default function LoanDetail() {
         </div>
       )}
 
-      {/* Modal de Pago */}
-      {showPaymentModal && selectedInstallment && (
+      {/* Modal de Pago - Paso 1: Seleccionar Método */}
+      {showPaymentModal && selectedInstallment && paymentStep === 1 && (
         <div className="modal-overlay" onClick={handleClosePaymentModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Registrar Pago - Cuota #{selectedInstallment.installmentNumber}</h3>
+            <h3 style={{ marginTop: 0 }}>Seleccionar Método de Pago</h3>
+            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+              Cuota #{selectedInstallment.installmentNumber} - Vencimiento: {formatDate(selectedInstallment.dueDate)}
+            </p>
+            
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <button
+                className="btn"
+                style={{ 
+                  padding: '1rem', 
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectPaymentMethod('EFECTIVO')}
+              >
+                💵 Efectivo
+              </button>
+              <button
+                className="btn"
+                style={{ 
+                  padding: '1rem', 
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectPaymentMethod('BILLETERA_DIGITAL')}
+              >
+                📱 Billetera Digital (Yape, Plin, etc.)
+              </button>
+              <button
+                className="btn"
+                style={{ 
+                  padding: '1rem', 
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectPaymentMethod('TARJETA_DEBITO')}
+              >
+                💳 Tarjeta de Débito
+              </button>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleClosePaymentModal}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Pago - Paso 2: Detalles y Monto */}
+      {showPaymentModal && selectedInstallment && paymentStep === 2 && (
+        <div className="modal-overlay" onClick={handleClosePaymentModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>
+              Pagar Cuota #{selectedInstallment.installmentNumber}
+              <span style={{ fontSize: '0.9rem', fontWeight: 'normal', marginLeft: '0.5rem', color: '#666' }}>
+                ({paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : paymentMethod === 'BILLETERA_DIGITAL' ? '📱 Billetera Digital' : '💳 Tarjeta'})
+              </span>
+            </h3>
             
             {error && (
               <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
@@ -778,13 +875,17 @@ export default function LoanDetail() {
             <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '1rem' }}>
               <div><strong>Fecha de Vencimiento:</strong> {formatDate(selectedInstallment.dueDate)}</div>
               <div>
-                <strong>Monto de Cuota{paymentMethod === 'EFECTIVO' ? ' (redondeado efectivo)' : ''}:</strong>{' '}
-                S/ {displayInstallmentAmount.toFixed(2)}
+                <strong>Saldo pendiente (cuota + mora):</strong>{' '}
+                S/ {(selectedInstallment.pendingTotal !== undefined
+                  ? Number(selectedInstallment.pendingTotal)
+                  : (Number(selectedInstallment.remainingInstallment || selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0))).toFixed(2)}
               </div>
-              <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #ddd' }}>
-                <strong>Mora:</strong> S/ {(selectedInstallment.lateFeeAmount || 0).toFixed(2)}
-              </div>
-              <div style={{ marginTop: '0.5rem', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
+              {selectedInstallment.lateFeeAmount > 0 && (
+                <div style={{ marginTop: '0.5rem', color: '#dc3545' }}>
+                  <strong>Mora (1% fijo):</strong> S/ {(selectedInstallment.lateFeeAmount || 0).toFixed(2)}
+                </div>
+              )}
+              <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #ddd', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
                 <strong>Total a Pagar:</strong> S/ {displayTotalToPay.toFixed(2)}
               </div>
             </div>
@@ -796,33 +897,17 @@ export default function LoanDetail() {
                   type="number"
                   id="paymentAmount"
                   value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  step="0.01"
-                  max={(parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount)).toFixed(2)}
+                  onChange={handlePaymentAmountChange}
+                  step="any"
+                  max={maxPaymentAmount.toFixed(2)}
                   min="0.01"
                   required
                   disabled={processingPayment}
                 />
                 <small>
-                  Máximo: S/ {(
-                    parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount)
-                  ).toFixed(2)}
+                  Máximo: S/ {maxPaymentAmount.toFixed(2)}
+                  {paymentMethod === 'EFECTIVO' && ' (solo múltiplos de S/ 0.10)'}
                 </small>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="paymentMethod">Método de Pago</label>
-                <select
-                  id="paymentMethod"
-                  value={paymentMethod}
-                  onChange={handlePaymentMethodChange}
-                  required
-                  disabled={processingPayment}
-                >
-                  <option value="EFECTIVO">Efectivo</option>
-                  <option value="BILLETERA_DIGITAL">Billetera Digital</option>
-                  <option value="TARJETA_DEBITO">Tarjeta de Débito</option>
-                </select>
               </div>
 
               {!cashSession && (
@@ -839,27 +924,37 @@ export default function LoanDetail() {
 
               {(paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') && (
                 <div className="badge badge-blue" style={{ marginBottom: '1rem' }}>
-                  ℹ️ Será redirigido a Flow para completar el pago
+                  ℹ️ Será redirigido a Flow para completar el pago (monto exacto sin redondear)
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between' }}>
                 <button
                   type="button"
                   className="btn"
-                  onClick={handleClosePaymentModal}
+                  onClick={handleBackToMethodSelection}
                   disabled={processingPayment}
                 >
-                  Cancelar
+                  ← Cambiar método
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={processingPayment || !cashSession}
-                  style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
-                >
-                  {processingPayment ? '⏳ Procesando...' : (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow' : 'Registrar Pago'}
-                </button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={handleClosePaymentModal}
+                    disabled={processingPayment}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={processingPayment || !cashSession}
+                    style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
+                  >
+                    {processingPayment ? '⏳ Procesando...' : (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow →' : 'Registrar Pago'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
