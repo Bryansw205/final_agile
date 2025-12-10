@@ -3,7 +3,8 @@ import { body, param, query } from 'express-validator';
 import { handleValidation } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
 import { 
-  registerPayment, 
+  registerPayment,
+  registerAdvancePayment, 
   getLoanStatement, 
   calculateLateFees 
 } from '../services/payment.js';
@@ -156,6 +157,7 @@ router.get(
           loan: {
             include: {
               client: true,
+              schedules: { orderBy: { installmentNumber: 'asc' } },
             },
           },
           registeredBy: {
@@ -169,6 +171,29 @@ router.get(
 
       if (!payment) {
         return res.status(404).json({ error: 'Pago no encontrado' });
+      }
+
+      // Si es un pago adelantado (sin installmentId), obtener todas las cuotas completamente pagadas en la misma fecha
+      if (!payment.installmentId && payment.loan.schedules) {
+        const installmentsPaid = [];
+        for (const schedule of payment.loan.schedules) {
+          if (schedule.isPaid) {
+            // Verificar si esta cuota fue marcada como pagada alrededor de la fecha de este pago
+            const timeDiff = Math.abs(new Date(schedule.updatedAt || schedule.isPaid) - new Date(payment.createdAt));
+            // Si fue marcada como pagada en los últimos 5 segundos del pago adelantado, probablemente fue por este pago
+            if (timeDiff < 5000 || (schedule.updatedAt && Math.abs(new Date(schedule.updatedAt) - new Date(payment.createdAt)) < 5000)) {
+              installmentsPaid.push({
+                id: schedule.id,
+                installmentNumber: schedule.installmentNumber,
+                dueDate: schedule.dueDate,
+                installmentAmount: Number(schedule.installmentAmount),
+              });
+            }
+          }
+        }
+        if (installmentsPaid.length > 0) {
+          payment.installmentsPaid = installmentsPaid;
+        }
       }
 
       const type = (req.query.type || 'boleta').toString().toLowerCase();
@@ -321,6 +346,75 @@ router.post(
           baseAmount: Number(f.baseAmount),
         })),
         totalLateFee: result.totalLateFee,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /payments/advance
+ * Registra un pago adelantado para múltiples cuotas
+ */
+router.post(
+  '/advance',
+  requireAuth,
+  body('loanId').isInt({ gt: 0 }),
+  body('amount').isFloat({ gt: 0 }),
+  body('paymentMethod').isIn(['EFECTIVO', 'BILLETERA_DIGITAL', 'TARJETA_DEBITO', 'TARJETA', 'YAPE', 'PLIN', 'FLOW', 'OTRO']),
+  body('cashSessionId').isInt({ gt: 0 }),
+  body('installmentIds').isArray({ min: 1 }),
+  body('installmentIds.*').isInt({ gt: 0 }),
+  body('externalReference').optional().isString(),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { loanId, amount, paymentMethod, cashSessionId, installmentIds, externalReference } = req.body;
+      const registeredByUserId = req.user.id;
+
+      if (
+        paymentMethod === 'EFECTIVO' &&
+        (Math.round(Number(amount) * 100) % 10 !== 0)
+      ) {
+        return res.status(400).json({ error: 'Para pagos en efectivo, solo se permiten montos en múltiplos de S/ 0.10' });
+      }
+
+      if (
+        (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') &&
+        Number(amount) < 2
+      ) {
+        return res.status(400).json({ error: 'El monto mínimo para billetera digital o tarjeta débito es S/ 2.00' });
+      }
+
+      const payment = await registerAdvancePayment({
+        loanId: Number(loanId),
+        amount: Number(amount),
+        paymentMethod,
+        registeredByUserId,
+        cashSessionId: Number(cashSessionId),
+        installmentIds: installmentIds.map(id => Number(id)),
+        externalReference,
+      });
+
+      res.status(201).json({
+        success: true,
+        payment: {
+          id: payment.id,
+          receiptNumber: payment.receiptNumber,
+          amount: Number(payment.amount),
+          paymentMethod: payment.paymentMethod,
+          paymentDate: payment.paymentDate,
+          principalPaid: Number(payment.principalPaid),
+          interestPaid: Number(payment.interestPaid),
+          lateFeePaid: Number(payment.lateFeePaid),
+          roundingAdjustment: Number(payment.roundingAdjustment),
+          installmentsPaid: payment.installmentsPaid || [],
+          loan: {
+            id: payment.loan.id,
+            client: payment.loan.client,
+          },
+        },
       });
     } catch (error) {
       next(error);

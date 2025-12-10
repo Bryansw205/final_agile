@@ -230,16 +230,38 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   // Fila detalle
   const rowY = headerY + 24;
   x = startX + 8;
-  const rowVals = [
-    '1 UNIDAD',
-    `Pago préstamo #${loan.id}`,
-    formatCurrency(total),
-    formatCurrency(total)
-  ];
-  rowVals.forEach((val, idx) => {
-    doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
-    x += colWidths[idx];
-  });
+  
+  // Si es un pago adelantado con múltiples cuotas, mostrar el detalle
+  if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
+    // Mostrar cada cuota en una fila separada
+    let currentY = rowY;
+    payment.installmentsPaid.forEach((inst) => {
+      const rowVals = [
+        '1 UNIDAD',
+        `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
+        formatCurrency(inst.installmentAmount),
+        formatCurrency(inst.installmentAmount)
+      ];
+      x = startX + 8;
+      rowVals.forEach((val, idx) => {
+        doc.text(val, x, currentY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+        x += colWidths[idx];
+      });
+      currentY += 20;
+    });
+  } else {
+    // Pago individual
+    const rowVals = [
+      '1 UNIDAD',
+      `Pago préstamo #${loan.id}`,
+      formatCurrency(total),
+      formatCurrency(total)
+    ];
+    rowVals.forEach((val, idx) => {
+      doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+      x += colWidths[idx];
+    });
+  }
 
   // Totales
   const totalsY = rowY + 32;

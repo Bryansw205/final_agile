@@ -40,6 +40,11 @@ export default function LoanDetail() {
   const [invoiceRuc, setInvoiceRuc] = useState('');
   const [invoiceName, setInvoiceName] = useState('');
   const [invoiceAddress, setInvoiceAddress] = useState('');
+  // Estados para el modo "Adelantar Pago"
+  const [advancePaymentMode, setAdvancePaymentMode] = useState(false);
+  const [selectedInstallments, setSelectedInstallments] = useState(new Set());
+  const [advancePaymentMethod, setAdvancePaymentMethod] = useState('');
+  const [advancePaymentAmount, setAdvancePaymentAmount] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -330,6 +335,47 @@ export default function LoanDetail() {
     setSuccess('');
   }
 
+  function handleOpenAdvancePaymentMode() {
+    if (!cashSession) {
+      setError('Debe abrir una sesión de caja antes de registrar pagos');
+      return;
+    }
+    setAdvancePaymentMode(true);
+    setSelectedInstallments(new Set());
+    setAdvancePaymentMethod('');
+    setAdvancePaymentAmount('');
+    setError('');
+    setSuccess('');
+  }
+
+  function handleCloseAdvancePaymentMode() {
+    setAdvancePaymentMode(false);
+    setSelectedInstallments(new Set());
+    setAdvancePaymentMethod('');
+    setAdvancePaymentAmount('');
+  }
+
+  function handleToggleInstallmentSelection(installmentId) {
+    const newSelected = new Set(selectedInstallments);
+    if (newSelected.has(installmentId)) {
+      newSelected.delete(installmentId);
+    } else {
+      newSelected.add(installmentId);
+    }
+    setSelectedInstallments(newSelected);
+  }
+
+  function handleSelectAdvancePaymentMethod(method) {
+    setAdvancePaymentMethod(method);
+    // Calcular total de cuotas seleccionadas
+    const total = scheduleWithRemaining
+      .filter(s => selectedInstallments.has(s.id) && !s.isPaid)
+      .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0);
+    
+    const initialAmount = method === 'EFECTIVO' ? roundCash(total) : total;
+    setAdvancePaymentAmount(initialAmount.toFixed(2));
+  }
+
   function handleSelectPaymentMethod(method) {
     setPaymentMethod(method);
     // Usar pendingTotal del backend (ya incluye cuota restante + mora si aplica)
@@ -529,6 +575,97 @@ export default function LoanDetail() {
     } catch (err) {
       console.error('❌ Error al procesar pago:', err);
       setError(err.message || 'Error al procesar el pago');
+    } finally {
+      setProcessingPayment(false);
+    }
+  }
+
+  async function handleAdvancePayment(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (selectedInstallments.size === 0) {
+      setError('Seleccione al menos una cuota');
+      return;
+    }
+
+    const amount = parseFloat(advancePaymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError('Ingrese un monto válido');
+      return;
+    }
+
+    if (!advancePaymentMethod) {
+      setError('Seleccione un método de pago');
+      return;
+    }
+
+    // Validar que en EFECTIVO el monto sea múltiplo de S/ 0.10
+    if (advancePaymentMethod === 'EFECTIVO') {
+      const cents = Math.round(amount * 100);
+      if (cents % 10 !== 0) {
+        setError('En efectivo solo se aceptan múltiplos de S/ 0.10');
+        return;
+      }
+    }
+
+    if ((advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') && amount < 2) {
+      setError('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+      return;
+    }
+
+    if (!cashSession) {
+      setError('Debe abrir una sesión de caja antes de registrar pagos');
+      return;
+    }
+
+    // Aplicar redondeo automático para efectivo
+    const finalAmount = advancePaymentMethod === 'EFECTIVO'
+      ? Number(roundCash(amount).toFixed(2))
+      : amount;
+
+    setProcessingPayment(true);
+
+    try {
+      if (advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') {
+        // Pago adelantado con Flow
+        const installmentIds = Array.from(selectedInstallments);
+        const flowResponse = await apiPost('/flow/create-advance-payment', {
+          loanId: parseInt(id),
+          amount,
+          email: 'cliente@example.com',
+          installmentIds,
+        });
+        window.location.href = flowResponse.paymentUrl;
+      } else {
+        // Pago adelantado con efectivo
+        const installmentIds = Array.from(selectedInstallments);
+        const paymentPayload = {
+          loanId: parseInt(id),
+          amount: finalAmount,
+          paymentMethod: advancePaymentMethod,
+          cashSessionId: cashSession?.id || null,
+          installmentIds,
+        };
+
+        console.log('📤 Enviando pago adelantado:', paymentPayload);
+        const response = await apiPost('/payments/advance', paymentPayload);
+        console.log('✅ Pago adelantado registrado:', response);
+
+        setSuccess('¡Pago adelantado registrado exitosamente!');
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        handleCloseAdvancePaymentMode();
+        
+        console.log('🔄 Recargando datos del préstamo...');
+        await load();
+        console.log('✅ Datos recargados');
+      }
+    } catch (err) {
+      console.error('❌ Error al procesar pago adelantado:', err);
+      setError(err.message || 'Error al procesar el pago adelantado');
     } finally {
       setProcessingPayment(false);
     }
@@ -743,6 +880,17 @@ export default function LoanDetail() {
               })}
             </tbody>
           </table>
+        </div>
+        {/* Botón "Adelantar Pago" en la parte inferior derecha */}
+        <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-primary"
+            onClick={handleOpenAdvancePaymentMode}
+            disabled={processingPayment || !cashSession || scheduleWithRemaining.every(s => s.isPaid)}
+            title={!cashSession ? 'Abre una sesión de caja primero' : scheduleWithRemaining.every(s => s.isPaid) ? 'Todas las cuotas están pagadas' : 'Pagar múltiples cuotas a la vez'}
+          >
+            ⏩ Adelantar Pago
+          </button>
         </div>
       </div>
 
@@ -1053,6 +1201,272 @@ export default function LoanDetail() {
                 <button type="submit" className="btn btn-primary">
                   Descargar
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Adelanto de Pago - Seleccionar Cuotas */}
+      {advancePaymentMode && !advancePaymentMethod && (
+        <div className="modal-overlay" onClick={handleCloseAdvancePaymentMode}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Adelantar Pago - Seleccionar Cuotas</h3>
+            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+              Selecciona una o más cuotas pendientes para pagar conjuntamente
+            </p>
+
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ddd', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', backgroundColor: '#f9f9f9' }}>
+              {scheduleWithRemaining.filter(s => !s.isPaid).length === 0 ? (
+                <p style={{ color: '#666', textAlign: 'center' }}>No hay cuotas pendientes</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {scheduleWithRemaining.filter(s => !s.isPaid).map((installment) => (
+                    <label key={installment.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', backgroundColor: 'white', borderRadius: '6px', border: '1px solid #e0e0e0', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedInstallments.has(installment.id)}
+                        onChange={() => handleToggleInstallmentSelection(installment.id)}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div>
+                          <strong>Cuota #{installment.installmentNumber}</strong> - Vencimiento: {formatDate(installment.dueDate)}
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#666' }}>
+                          Pendiente: S/ {Number(installment.pendingTotal || installment.installmentAmount).toFixed(2)}
+                          {installment.lateFeeAmount > 0 && ` (incluye mora: S/ ${Number(installment.lateFeeAmount).toFixed(2)})`}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedInstallments.size > 0 && (
+              <div style={{ padding: '1rem', backgroundColor: '#e7f3ff', borderRadius: '8px', marginBottom: '1.5rem', borderLeft: '4px solid #007bff' }}>
+                <strong>Resumen:</strong>
+                <div style={{ marginTop: '0.5rem', fontSize: '0.95rem' }}>
+                  Cuotas seleccionadas: {selectedInstallments.size}
+                </div>
+                <div style={{ marginTop: '0.5rem', fontSize: '1.1rem', fontWeight: 'bold', color: '#007bff' }}>
+                  Total a pagar: S/ {scheduleWithRemaining
+                    .filter(s => selectedInstallments.has(s.id))
+                    .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0)
+                    .toFixed(2)}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleCloseAdvancePaymentMode}
+                disabled={processingPayment}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (selectedInstallments.size === 0) {
+                    setError('Selecciona al menos una cuota');
+                    return;
+                  }
+                  // Pasar al siguiente paso (seleccionar método de pago)
+                  setAdvancePaymentMethod('pending');
+                }}
+                disabled={processingPayment || selectedInstallments.size === 0}
+              >
+                Continuar →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Adelanto de Pago - Seleccionar Método y Monto */}
+      {advancePaymentMode && advancePaymentMethod === 'pending' && (
+        <div className="modal-overlay" onClick={handleCloseAdvancePaymentMode}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Adelantar Pago - Seleccionar Método</h3>
+            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
+              Selecciona un método de pago para {selectedInstallments.size} cuota{selectedInstallments.size > 1 ? 's' : ''}
+            </p>
+
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+              <button
+                className="btn"
+                style={{
+                  padding: '1rem',
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectAdvancePaymentMethod('EFECTIVO')}
+              >
+                💵 Efectivo
+              </button>
+              <button
+                className="btn"
+                style={{
+                  padding: '1rem',
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectAdvancePaymentMethod('BILLETERA_DIGITAL')}
+              >
+                📱 Billetera Digital (Yape, Plin, etc.)
+              </button>
+              <button
+                className="btn"
+                style={{
+                  padding: '1rem',
+                  fontSize: '1.1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem'
+                }}
+                onClick={() => handleSelectAdvancePaymentMethod('TARJETA_DEBITO')}
+              >
+                💳 Tarjeta de Débito
+              </button>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setAdvancePaymentMethod('');
+                  setAdvancePaymentAmount('');
+                }}
+              >
+                ← Volver
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Adelanto de Pago - Confirmar Monto */}
+      {advancePaymentMode && advancePaymentMethod && advancePaymentMethod !== 'pending' && (
+        <div className="modal-overlay" onClick={handleCloseAdvancePaymentMode}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>
+              Adelantar Pago
+              <span style={{ fontSize: '0.9rem', fontWeight: 'normal', marginLeft: '0.5rem', color: '#666' }}>
+                ({advancePaymentMethod === 'EFECTIVO' ? '💵 Efectivo' : advancePaymentMethod === 'BILLETERA_DIGITAL' ? '📱 Billetera Digital' : '💳 Tarjeta'})
+              </span>
+            </h3>
+
+            {error && (
+              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '1rem' }}>
+              <div style={{ marginBottom: '1rem' }}>
+                <strong>Cuotas seleccionadas ({selectedInstallments.size}):</strong>
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '1rem' }}>
+                {scheduleWithRemaining
+                  .filter(s => selectedInstallments.has(s.id))
+                  .map(s => (
+                    <div key={s.id} style={{ padding: '0.5rem', backgroundColor: 'white', marginBottom: '0.5rem', borderRadius: '4px', fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Cuota #{s.installmentNumber}</span>
+                      <strong>S/ {Number(s.pendingTotal || s.installmentAmount).toFixed(2)}</strong>
+                    </div>
+                  ))}
+              </div>
+              <div style={{ paddingTop: '1rem', borderTop: '1px solid #ddd', fontWeight: 'bold', fontSize: '1.1rem', color: '#007bff' }}>
+                <strong>Total a Pagar:</strong> S/ {scheduleWithRemaining
+                  .filter(s => selectedInstallments.has(s.id))
+                  .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0)
+                  .toFixed(2)}
+                {advancePaymentMethod === 'EFECTIVO' && ' (se redondeará según normas)'}
+              </div>
+            </div>
+
+            <form onSubmit={handleAdvancePayment}>
+              <div className="form-group">
+                <label htmlFor="advancePaymentAmount">Monto a Pagar (S/)</label>
+                <input
+                  type="number"
+                  id="advancePaymentAmount"
+                  value={advancePaymentAmount}
+                  onChange={(e) => setAdvancePaymentAmount(e.target.value)}
+                  step="any"
+                  min="0.01"
+                  required
+                  disabled={processingPayment}
+                />
+                <small>
+                  ℹ️ El monto se calcula automáticamente basado en el total adeudado de las cuotas seleccionadas.
+                  {advancePaymentMethod === 'EFECTIVO' && ' Se aplicará redondeo según normas peruanas.'}
+                </small>
+              </div>
+
+              {advancePaymentMethod === 'EFECTIVO' && (
+                <div className="badge badge-blue" style={{ marginBottom: '1rem' }}>
+                  ℹ️ Se aplicará redondeo automático según normas peruanas
+                </div>
+              )}
+
+              {(advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') && (
+                <div className="badge badge-blue" style={{ marginBottom: '1rem' }}>
+                  ℹ️ Será redirigido a Flow para completar el pago
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setAdvancePaymentMethod('pending')}
+                  disabled={processingPayment}
+                >
+                  ← Cambiar método
+                </button>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={handleCloseAdvancePaymentMode}
+                    disabled={processingPayment}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={processingPayment}
+                    style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
+                  >
+                    {processingPayment ? '⏳ Procesando...' : (advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow →' : 'Registrar Pago'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
