@@ -444,7 +444,10 @@ export async function registerAdvancePayment({
         if (outstandingAmount <= OUTSTANDING_TOLERANCE) {
           await tx.paymentSchedule.update({
             where: { id: installment.id },
-            data: { isPaid: true },
+            data: { 
+              isPaid: true,
+              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
+            },
           });
           console.log('✅ Cuota #' + installment.installmentNumber + ' marcada como pagada');
         }
@@ -894,7 +897,10 @@ export async function registerPayment({
         if (shouldMarkAsPaid) {
           await tx.paymentSchedule.update({
             where: { id: installmentId },
-            data: { isPaid: true },
+            data: { 
+              isPaid: true,
+              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
+            },
           });
           console.log('✅ Cuota marcada como pagada:', installmentId);
         } else {
