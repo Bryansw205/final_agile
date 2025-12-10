@@ -119,6 +119,72 @@ function formatCurrency(n) {
   return `S/ ${num.toFixed(2)}`;
 }
 
+/**
+ * Convierte un número a palabras en español para boletas
+ * Ejemplo: 2.30 -> "DOS Y 30/100"
+ */
+function numberToWords(amount) {
+  const num = typeof amount === 'number' ? amount : Number(amount);
+  const integerPart = Math.floor(num);
+  const decimalPart = Math.round((num - integerPart) * 100);
+  
+  const ones = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE'];
+  const tens = ['', '', 'VEINTE', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const teens = ['DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE'];
+  const hundreds = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+  
+  function convertToWords(n) {
+    if (n === 0) return 'CERO';
+    if (n < 0) return 'MENOS ' + convertToWords(-n);
+    
+    let words = '';
+    
+    // Millones
+    if (n >= 1000000) {
+      const millionPart = Math.floor(n / 1000000);
+      words += convertToWords(millionPart) + ' MILLÓN';
+      if (millionPart > 1) words = words.replace('MILLÓN', 'MILLONES');
+      n = n % 1000000;
+      if (n > 0) words += ' ';
+    }
+    
+    // Miles
+    if (n >= 1000) {
+      const thousandPart = Math.floor(n / 1000);
+      words += convertToWords(thousandPart) + ' MIL';
+      n = n % 1000;
+      if (n > 0) words += ' ';
+    }
+    
+    // Centenas
+    if (n >= 100) {
+      const hundredPart = Math.floor(n / 100);
+      words += hundreds[hundredPart];
+      n = n % 100;
+      if (n > 0) words += ' ';
+    }
+    
+    // Decenas y unidades
+    if (n >= 20) {
+      const tenPart = Math.floor(n / 10);
+      words += tens[tenPart];
+      n = n % 10;
+      if (n > 0) words += ' Y ' + ones[n];
+    } else if (n >= 10) {
+      words += teens[n - 10];
+    } else if (n > 0) {
+      words += ones[n];
+    }
+    
+    return words.trim();
+  }
+  
+  const integerWords = convertToWords(integerPart);
+  const decimalFormatted = String(decimalPart).padStart(2, '0');
+  
+  return `${integerWords} Y ${decimalFormatted}/100`;
+}
+
 function formatDate(d) {
   const date = d instanceof Date ? d : new Date(d);
   const day = String(date.getUTCDate()).padStart(2, '0');
@@ -285,7 +351,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
 
   // SON:
   doc.moveDown(2);
-  doc.text(`SON: ${formatCurrency(total)} SOLES`, { width: contentWidth });
+  doc.text(`SON: ${numberToWords(total)} SOLES`, { width: contentWidth });
 
   // QR imagen + texto
   const qrY = doc.y + 10;
