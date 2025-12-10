@@ -7,11 +7,12 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "prisma": "prisma",
+    "postinstall": "prisma generate",
     "seed": "node src/seed.js"
   },
   "dependencies": {
     "@nicotordev/flowcl-pagos": "^10.2.2",
-    "@prisma/client": "^5.19.0",
+    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
@@ -22,7 +23,7 @@
     "morgan": "^1.10.0",
     "node-fetch": "^3.3.2",
     "pdfkit": "^0.14.0",
-    "prisma": "^5.19.0"
+    "prisma": "^5.22.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
