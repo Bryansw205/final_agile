@@ -246,15 +246,14 @@ async function buildAdvancePaymentContext({
   }
 
   if (enforcePreviousPaid) {
-    if (enforcePreviousPaid) {
     for (const selectedInstallment of selectedInstallments) {
       const previousInstallments = loan.schedules.filter(
         (s) => s.installmentNumber < selectedInstallment.installmentNumber
       );
       for (const prevInstallment of previousInstallments) {
-        // Si la cuota anterior tambi?n est? incluida en la selecci?n actual, se pagar? en la misma operaci?n
+        // Si la cuota anterior también está incluida en la selección actual, se pagará en la misma operación
         if (normalizedInstallmentIds.includes(prevInstallment.id)) {
-          console.log('[ADVANCE] Saltando validaci?n de cuota previa porque est? seleccionada en el mismo pago:', {
+          console.log('[ADVANCE] Saltando validación de cuota previa porque está seleccionada en el mismo pago:', {
             selectedInstallment: selectedInstallment.installmentNumber,
             previousInstallment: prevInstallment.installmentNumber,
           });
@@ -283,6 +282,7 @@ async function buildAdvancePaymentContext({
       }
     }
   }
+
   let totalOwed = 0;
   for (const installment of selectedInstallments) {
     const paymentsForInstallment = loan.payments.filter(p => p.installmentId === installment.id);
