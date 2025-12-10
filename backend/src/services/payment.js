@@ -825,6 +825,19 @@ export async function registerPayment({
     return newPayment;
   });
 
+  // Incluir información de cuota pagada en la respuesta
+  if (installmentId) {
+    const installment = loan.schedules.find(s => s.id === installmentId);
+    if (installment) {
+      payment.installmentsPaid = [{
+        id: installment.id,
+        installmentNumber: installment.installmentNumber,
+        dueDate: installment.dueDate,
+        installmentAmount: Number(installment.installmentAmount),
+      }];
+    }
+  }
+
   return payment;
 }
 
