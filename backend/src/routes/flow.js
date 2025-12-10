@@ -433,11 +433,15 @@ router.post(
         });
       }
 
+      // Obtener el método de pago real desde Flow
+      const realPaymentMethod = mapFlowPaymentMethod(paymentStatus.paymentMethod);
+      console.log('💳 Método de pago mapeado (confirm): Flow:', paymentStatus.paymentMethod, '-> BD:', realPaymentMethod);
+
       // Registrar el pago
       const payment = await registerPayment({
         loanId,
         amount: paymentStatus.amount,
-        paymentMethod: 'FLOW',
+        paymentMethod: realPaymentMethod,
         registeredByUserId,
         cashSessionId,
         externalReference: paymentStatus.flowOrder.toString(),

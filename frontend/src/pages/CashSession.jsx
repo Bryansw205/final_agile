@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiDownload } from '../lib/api';
+import { apiGet, apiPost, apiDownload, getPaymentMethodLabel } from '../lib/api';
 
 export default function Payments() {
   const [cashSession, setCashSession] = useState(null);
@@ -162,7 +162,7 @@ export default function Payments() {
                   <tbody>
                     {Object.entries(cashSession.summary.paymentsByMethod).map(([method, data]) => (
                       <tr key={method}>
-                        <td>{method}</td>
+                        <td>{getPaymentMethodLabel(method)}</td>
                         <td>{data.count}</td>
                         <td>S/ {data.total.toFixed(2)}</td>
                       </tr>
@@ -199,7 +199,7 @@ export default function Payments() {
                     <tr key={payment.id}>
                       <td>{new Date(payment.paymentDate).toLocaleTimeString('es-PE')}</td>
                       <td>{payment.loan.client.firstName} {payment.loan.client.lastName}</td>
-                      <td>{payment.paymentMethod}</td>
+                      <td>{getPaymentMethodLabel(payment.paymentMethod)}</td>
                       <td>S/ {payment.amount.toFixed(2)}</td>
                       <td>{payment.receiptNumber}</td>
                     </tr>

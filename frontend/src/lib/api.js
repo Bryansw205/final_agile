@@ -58,3 +58,22 @@ export async function apiDownload(path, filename) {
 export function apiFileUrl(path) {
   return `${API_URL}${path}`;
 }
+
+/**
+ * Convierte el código de método de pago a un nombre legible
+ * @param {string} method - Método de pago (EFECTIVO, YAPE, PLIN, TARJETA, etc.)
+ * @returns {string} Nombre legible del método
+ */
+export function getPaymentMethodLabel(method) {
+  const methods = {
+    'EFECTIVO': '💵 Efectivo',
+    'YAPE': '📱 YAPE',
+    'PLIN': '📱 PLIN',
+    'BILLETERA_DIGITAL': '💳 Billetera Digital',
+    'TARJETA_DEBITO': '💳 Tarjeta Débito',
+    'TARJETA CREDITO': '💳 Tarjeta Crédito',
+    'FLOW': '🌐 Flow',
+    'OTRO': '❓ Otro'
+  };
+  return methods[method] || method;
+}

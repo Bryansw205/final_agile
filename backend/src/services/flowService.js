@@ -171,8 +171,8 @@ export function getFlowStatusText(status) {
 
 /**
  * Mapea el método de pago de Flow a los métodos de la BD
- * Flow devuelve valores como: "YAPE", "PLIN", "Transferencia Bancaria", "Tarjeta de Crédito", "Tarjeta de Débito", etc.
- * @param {string} flowPaymentMethod - Método de Flow
+ * Flow devuelve valores como: "Pago con YAPE", "Pago con PLIN", "Transferencia Bancaria", etc.
+ * @param {string} flowPaymentMethod - Método de Flow (ej: "Pago con YAPE")
  * @returns {string} Método de BD compatible
  */
 export function mapFlowPaymentMethod(flowPaymentMethod) {
@@ -180,9 +180,9 @@ export function mapFlowPaymentMethod(flowPaymentMethod) {
   
   const method = (flowPaymentMethod || '').toUpperCase().trim();
   
-  // Mapeo directo
-  if (method === 'YAPE') return 'YAPE';
-  if (method === 'PLIN') return 'PLIN';
+  // Mapeo directo para métodos de Flow
+  if (method.includes('YAPE')) return 'YAPE';
+  if (method.includes('PLIN')) return 'PLIN';
   
   // Billetera digital
   if (method.includes('BILLETERA') || method.includes('WALLET')) return 'BILLETERA_DIGITAL';
