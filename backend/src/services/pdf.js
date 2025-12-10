@@ -226,9 +226,9 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   
   // Serie y correlativo para comprobante electrónico
   // Serie: F001 (Factura) o B001 (Boleta)
-  // Correlativo: número secuencial basado en el ID del pago, formateado a 8 dígitos
+  // Correlativo: número secuencial pasado desde el endpoint (1, 2, 3, etc.)
   const series = type === 'factura' ? 'F001' : 'B001';
-  const correlative = String(payment.id || 0).padStart(8, '0');
+  const correlative = String(invoiceInfo.correlative || 1).padStart(8, '0');
   const comprobanteFull = `${series}-${correlative}`;
 
   const margin = doc.page.margins.left;

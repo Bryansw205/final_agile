@@ -206,8 +206,18 @@ router.get(
       }
 
       const type = (payment.receiptType || 'BOLETA').toLowerCase();
+      
+      // Contar pagos del mismo tipo generados hasta ahora (para correlativo secuencial)
+      const paymentCount = await prisma.payment.count({
+        where: {
+          receiptType: payment.receiptType || 'BOLETA',
+          id: { lte: payment.id }, // Contar solo pagos con ID menor o igual al actual
+        },
+      });
+      
       const invoiceInfo = {
         type,
+        correlative: paymentCount, // Número secuencial 1, 2, 3, etc.
         customerRuc: payment.invoiceRuc || '',
         customerName: payment.invoiceBusinessName || '',
         customerAddress: payment.invoiceAddress || '',
