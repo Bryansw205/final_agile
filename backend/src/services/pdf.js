@@ -228,86 +228,35 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   doc.fillColor('black').font('Helvetica').fontSize(10);
 
   // Fila detalle
-  let rowY = headerY + 24;
+  const rowY = headerY + 24;
   x = startX + 8;
-
+  
   // Si es un pago adelantado con múltiples cuotas, mostrar el detalle
   if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
-    // Mostrar encabezado de pago adelantado
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#0066cc');
-    doc.text('PAGO ADELANTADO - MÚLTIPLES CUOTAS', startX + 8, rowY - 4);
-    doc.fillColor('black').font('Helvetica').fontSize(9);
-    rowY += 14;
-
-    // Mostrar cada cuota en una fila separada con detalles
-    let subtotal = 0;
+    // Mostrar cada cuota en una fila separada
+    let currentY = rowY;
     payment.installmentsPaid.forEach((inst) => {
-      const amount = Number(inst.installmentAmount || 0);
-      subtotal += amount;
-
       const rowVals = [
         '1 UNIDAD',
-        `Cuota #${inst.installmentNumber}\n(Vencimiento: ${formatDate(inst.dueDate)})`,
-        formatCurrency(amount),
-        formatCurrency(amount)
+        `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
+        formatCurrency(inst.installmentAmount),
+        formatCurrency(inst.installmentAmount)
       ];
-
       x = startX + 8;
-      let cellX = x;
-      let cellY = rowY;
-
-      // Cantidad
-      doc.text(rowVals[0], cellX, cellY, { width: colWidths[0] - 16, align: 'left' });
-      cellX += colWidths[0];
-
-      // Descripción (puede ocupar 2 líneas)
-      doc.text(rowVals[1], cellX, cellY, { width: colWidths[1] - 16, align: 'left' });
-      cellX += colWidths[1];
-
-      // Precio unitario
-      doc.text(rowVals[2], cellX, cellY + 6, { width: colWidths[2] - 16, align: 'right' });
-      cellX += colWidths[2];
-
-      // Precio total
-      doc.text(rowVals[3], cellX, cellY + 6, { width: colWidths[3] - 16, align: 'right' });
-
-      rowY += 24;
-    });
-
-    // Línea separadora antes de totales
-    rowY += 4;
-    doc.moveTo(startX, rowY).lineTo(startX + contentWidth, rowY).stroke();
-    rowY += 8;
-
-    // Nota de resumen
-    doc.font('Helvetica').fontSize(8).fillColor('#555555');
-    doc.text(`Total de cuotas pagadas: ${payment.installmentsPaid.length}`, startX + 8, rowY);
-    doc.fillColor('black');
-  } else if (payment.installmentsPaid && payment.installmentsPaid.length === 1) {
-    // Pago individual de cuota específica
-    const inst = payment.installmentsPaid[0];
-    const rowVals = [
-      '1 UNIDAD',
-      `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)}) - Préstamo #${loan.id}`,
-      formatCurrency(total),
-      formatCurrency(total)
-    ];
-
-    x = startX + 8;
-    rowVals.forEach((val, idx) => {
-      doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
-      x += colWidths[idx];
+      rowVals.forEach((val, idx) => {
+        doc.text(val, x, currentY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
+        x += colWidths[idx];
+      });
+      currentY += 20;
     });
   } else {
-    // Pago sin información de cuotas específicas
+    // Pago individual
     const rowVals = [
       '1 UNIDAD',
       `Pago préstamo #${loan.id}`,
       formatCurrency(total),
       formatCurrency(total)
     ];
-
-    x = startX + 8;
     rowVals.forEach((val, idx) => {
       doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
       x += colWidths[idx];
@@ -315,7 +264,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   }
 
   // Totales
-  const totalsY = rowY + 40;
+  const totalsY = rowY + 32;
   doc.font('Helvetica-Bold');
   doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
   doc.text('IGV', startX + colWidths[0] + colWidths[1], totalsY + 14, { width: colWidths[2], align: 'right' });
