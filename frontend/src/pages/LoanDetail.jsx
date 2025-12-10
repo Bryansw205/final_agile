@@ -1030,7 +1030,7 @@ export default function LoanDetail() {
                 }}
                 onClick={() => handleSelectPaymentMethod('BILLETERA_DIGITAL')}
               >
-                📱 Pago Digital (Flow)
+                📱 Pago Digital
               </button>
             </div>
 
@@ -1054,7 +1054,7 @@ export default function LoanDetail() {
             <h3 style={{ marginTop: 0 }}>
               Pagar Cuota #{selectedInstallment.installmentNumber}
               <span style={{ fontSize: '0.9rem', fontWeight: 'normal', marginLeft: '0.5rem', color: '#666' }}>
-                ({paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : paymentMethod === 'BILLETERA_DIGITAL' ? '📱 Billetera Digital' : '💳 Tarjeta'})
+                ({paymentMethod === 'EFECTIVO' ? '💵 Efectivo' : paymentMethod === 'BILLETERA_DIGITAL' ? '📱 Pago Digital' : '💳 Tarjeta'})
               </span>
             </h3>
             
@@ -1488,7 +1488,7 @@ export default function LoanDetail() {
                 }}
                 onClick={() => handleSelectAdvancePaymentMethod('BILLETERA_DIGITAL')}
               >
-                📱 Pago Digital (Flow)
+                📱 Pago Digital
               </button>
             </div>
 
@@ -1515,7 +1515,7 @@ export default function LoanDetail() {
             <h3 style={{ marginTop: 0 }}>
               Adelantar Pago
               <span style={{ fontSize: '0.9rem', fontWeight: 'normal', marginLeft: '0.5rem', color: '#666' }}>
-                ({advancePaymentMethod === 'EFECTIVO' ? '💵 Efectivo' : advancePaymentMethod === 'BILLETERA_DIGITAL' ? '📱 Billetera Digital' : '💳 Tarjeta'})
+                ({advancePaymentMethod === 'EFECTIVO' ? '💵 Efectivo' : advancePaymentMethod === 'BILLETERA_DIGITAL' ? '📱 Pago Digital' : '💳 Tarjeta'})
               </span>
             </h3>
 
