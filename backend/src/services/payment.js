@@ -283,22 +283,6 @@ async function buildAdvancePaymentContext({
       }
     }
   }
-
-        if (prevInstallment.isPaid === false) {
-          const paymentsForPrevious = loan.payments.filter((p) => p.installmentId === prevInstallment.id);
-          const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
-          const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
-
-          if (previousOutstanding > OUTSTANDING_TOLERANCE) {
-            throw new Error(
-              `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
-            );
-          }
-        }
-      }
-    }
-  }
-
   let totalOwed = 0;
   for (const installment of selectedInstallments) {
     const paymentsForInstallment = loan.payments.filter(p => p.installmentId === installment.id);
