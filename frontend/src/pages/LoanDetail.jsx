@@ -547,8 +547,8 @@ export default function LoanDetail() {
       return;
     }
 
-    if ((paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') && amount < 2) {
-      setError('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+    if (paymentMethod === 'BILLETERA_DIGITAL' && amount < 2) {
+      setError('El monto mínimo para pago digital es S/ 2.00');
       return;
     }
 
@@ -568,8 +568,8 @@ export default function LoanDetail() {
     setProcessingPayment(true);
 
     try {
-      if (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') {
-        // Pago con Flow (billetera digital o tarjeta de débito)
+      if (paymentMethod === 'BILLETERA_DIGITAL') {
+        // Pago con Flow (pago digital)
         const email = 'cliente@example.com'; // Email dummy, el backend usará OWNER_EMAIL
 
         const flowResponse = await apiPost('/flow/create-payment', {
@@ -653,8 +653,8 @@ export default function LoanDetail() {
       }
     }
 
-    if ((advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') && amount < 2) {
-      setError('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
+    if (advancePaymentMethod === 'BILLETERA_DIGITAL' && amount < 2) {
+      setError('El monto mínimo para pago digital es S/ 2.00');
       return;
     }
 
@@ -671,7 +671,7 @@ export default function LoanDetail() {
     setProcessingPayment(true);
 
     try {
-      if (advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') {
+      if (advancePaymentMethod === 'BILLETERA_DIGITAL') {
         // Pago adelantado con Flow
         const installmentIds = Array.from(selectedInstallments);
         const flowResponse = await apiPost('/flow/create-advance-payment', {
@@ -1030,21 +1030,7 @@ export default function LoanDetail() {
                 }}
                 onClick={() => handleSelectPaymentMethod('BILLETERA_DIGITAL')}
               >
-                📱 Billetera Digital (Yape, Plin, etc.)
-              </button>
-              <button
-                className="btn"
-                style={{ 
-                  padding: '1rem', 
-                  fontSize: '1.1rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem'
-                }}
-                onClick={() => handleSelectPaymentMethod('TARJETA_DEBITO')}
-              >
-                💳 Tarjeta de Débito
+                📱 Pago Digital (Flow)
               </button>
             </div>
 
@@ -1130,7 +1116,7 @@ export default function LoanDetail() {
                 </div>
               )}
 
-              {(paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') && (
+              {paymentMethod === 'BILLETERA_DIGITAL' && (
                 <div className="badge badge-blue" style={{ marginBottom: '1rem' }}>
                   ℹ️ Será redirigido a Flow para completar el pago (monto exacto sin redondear)
                 </div>
@@ -1160,7 +1146,7 @@ export default function LoanDetail() {
                     disabled={processingPayment || !cashSession}
                     style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
                   >
-                    {processingPayment ? '⏳ Procesando...' : (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow →' : 'Registrar Pago'}
+                    {processingPayment ? '⏳ Procesando...' : paymentMethod === 'BILLETERA_DIGITAL' ? 'Ir a Flow →' : 'Registrar Pago'}
                   </button>
                 </div>
               </div>
@@ -1502,21 +1488,7 @@ export default function LoanDetail() {
                 }}
                 onClick={() => handleSelectAdvancePaymentMethod('BILLETERA_DIGITAL')}
               >
-                📱 Billetera Digital (Yape, Plin, etc.)
-              </button>
-              <button
-                className="btn"
-                style={{
-                  padding: '1rem',
-                  fontSize: '1.1rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '0.5rem'
-                }}
-                onClick={() => handleSelectAdvancePaymentMethod('TARJETA_DEBITO')}
-              >
-                💳 Tarjeta de Débito
+                📱 Pago Digital (Flow)
               </button>
             </div>
 
@@ -1601,7 +1573,7 @@ export default function LoanDetail() {
                 </div>
               )}
 
-              {(advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') && (
+              {advancePaymentMethod === 'BILLETERA_DIGITAL' && (
                 <div className="badge badge-blue" style={{ marginBottom: '1rem' }}>
                   ℹ️ Será redirigido a Flow para completar el pago
                 </div>
@@ -1631,7 +1603,7 @@ export default function LoanDetail() {
                     disabled={processingPayment}
                     style={{ opacity: processingPayment ? 0.6 : 1, cursor: processingPayment ? 'not-allowed' : 'pointer' }}
                   >
-                    {processingPayment ? '⏳ Procesando...' : (advancePaymentMethod === 'BILLETERA_DIGITAL' || advancePaymentMethod === 'TARJETA_DEBITO') ? 'Ir a Flow →' : 'Registrar Pago'}
+                    {processingPayment ? '⏳ Procesando...' : advancePaymentMethod === 'BILLETERA_DIGITAL' ? 'Ir a Flow →' : 'Registrar Pago'}
                   </button>
                 </div>
               </div>
