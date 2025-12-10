@@ -232,6 +232,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   x = startX + 8;
   
   // Si es un pago adelantado con múltiples cuotas, mostrar el detalle
+  let lastRowY = rowY;
   if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
     // Mostrar cada cuota en una fila separada
     let currentY = rowY;
@@ -249,6 +250,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
       });
       currentY += 20;
     });
+    lastRowY = currentY;
   } else {
     // Pago individual
     const rowVals = [
@@ -257,14 +259,19 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
       formatCurrency(total),
       formatCurrency(total)
     ];
+    x = startX + 8;
     rowVals.forEach((val, idx) => {
       doc.text(val, x, rowY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
       x += colWidths[idx];
     });
+    lastRowY = rowY + 20;
   }
 
+  // Línea separadora
+  doc.moveTo(startX, lastRowY).lineTo(startX + contentWidth, lastRowY).stroke();
+
   // Totales
-  const totalsY = rowY + 32;
+  const totalsY = lastRowY + 12;
   doc.font('Helvetica-Bold');
   doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
   doc.text('IGV', startX + colWidths[0] + colWidths[1], totalsY + 14, { width: colWidths[2], align: 'right' });
