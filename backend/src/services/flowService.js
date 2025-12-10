@@ -49,7 +49,7 @@ export async function createFlowPayment({
     commerceOrder: commerceOrder || `ORD-${Date.now()}`,
     subject,
     currency: FLOW_CURRENCY,
-    amount: Math.round(amount), // Flow requiere monto entero
+    amount: amount, // Monto exacto sin redondear (con centavos)
     email,
     paymentMethod,
     urlConfirmation,
