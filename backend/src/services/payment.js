@@ -312,8 +312,27 @@ export async function registerPayment({
     throw new Error('El monto del pago debe ser mayor a cero');
   }
 
+  // Si se especifica una cuota, validar que las cuotas anteriores estén pagadas
+  // pero permitir pagar hasta el límite de deuda total pendiente
+  if (installmentId) {
+    const installment = loan.schedules.find(s => s.id === installmentId);
+    if (installment) {
+      // Validar que todas las cuotas anteriores estén completamente pagadas
+      const previousInstallments = loan.schedules.filter(s => s.installmentNumber < installment.installmentNumber);
+      for (const prevInstallment of previousInstallments) {
+        const paidForPrevious = loan.payments
+          .filter(p => p.installmentId === prevInstallment.id)
+          .reduce((sum, p) => sum + Number(p.principalPaid) + Number(p.interestPaid), 0);
+        
+        if (paidForPrevious < Number(prevInstallment.installmentAmount)) {
+          throw new Error(`No puedes pagar la cuota #${installment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente`);
+        }
+      }
+    }
+  }
+
   if (paymentAmount > pendingTotal) {
-    throw new Error(`El monto del pago supera la deuda pendiente (máximo S/ ${pendingTotal.toFixed(2)})`);
+    throw new Error(`El monto del pago supera la deuda pendiente total (máximo S/ ${pendingTotal.toFixed(2)})`);
   }
 
   // Validar incrementos en efectivo: solo múltiplos de 0.10
