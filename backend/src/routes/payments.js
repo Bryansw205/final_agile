@@ -123,6 +123,10 @@ router.get(
         return res.status(404).json({ error: 'Pago no encontrado' });
       }
 
+      if (!payment.receiptType) {
+        return res.status(400).json({ error: 'El comprobante aún no ha sido configurado' });
+      }
+
       res.json({
         id: payment.id,
         receiptNumber: payment.receiptNumber,
@@ -460,14 +464,28 @@ router.post(
   requireAuth,
   param('id').isInt({ gt: 0 }),
   body('receiptType').isIn(['BOLETA', 'FACTURA']),
-  body('invoiceRuc').optional().isString(),
-  body('invoiceBusinessName').optional().isString(),
-  body('invoiceAddress').optional().isString(),
   handleValidation,
   async (req, res, next) => {
     try {
       const id = Number(req.params.id);
       const { receiptType, invoiceRuc, invoiceBusinessName, invoiceAddress } = req.body;
+
+      // Validación condicional: FACTURA requiere datos de invoice
+      if (receiptType === 'FACTURA') {
+        const errors = [];
+        if (!invoiceRuc || typeof invoiceRuc !== 'string') {
+          errors.push({ path: 'invoiceRuc', msg: 'invoiceRuc es requerido para FACTURA' });
+        }
+        if (!invoiceBusinessName || typeof invoiceBusinessName !== 'string') {
+          errors.push({ path: 'invoiceBusinessName', msg: 'invoiceBusinessName es requerido para FACTURA' });
+        }
+        if (!invoiceAddress || typeof invoiceAddress !== 'string') {
+          errors.push({ path: 'invoiceAddress', msg: 'invoiceAddress es requerido para FACTURA' });
+        }
+        if (errors.length > 0) {
+          return res.status(400).json({ errors });
+        }
+      }
       const { PrismaClient } = await import('@prisma/client');
       const prisma = new PrismaClient();
 

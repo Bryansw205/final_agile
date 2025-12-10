@@ -841,6 +841,7 @@ export async function registerPayment({
   cashSessionId,
   externalReference,
   installmentId, // ID de la cuota específica a pagar
+  receiptType = 'BOLETA', // Tipo de comprobante (BOLETA o FACTURA)
 }) {
   console.log('📝 registerPayment llamado con:', {
     loanId,
@@ -849,7 +850,8 @@ export async function registerPayment({
     registeredByUserId,
     cashSessionId,
     installmentId,
-    externalReference
+    externalReference,
+    receiptType
   });
 
   // Validar que exista una sesión de caja abierta antes de cualquier pago
@@ -1127,6 +1129,7 @@ export async function registerPayment({
         roundingAdjustment,
         externalReference,
         receiptNumber,
+        receiptType, // Tipo de comprobante (BOLETA o FACTURA)
         cashSessionId,
         paymentDate: new Date(),
       },
