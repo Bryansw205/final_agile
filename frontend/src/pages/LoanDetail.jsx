@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import dayjs from 'dayjs';
 import { apiGet, apiPost, apiDownload, apiFileUrl } from '../lib/api.js';
 import { formatDate } from '../lib/date.js';
 
@@ -1210,53 +1211,134 @@ export default function LoanDetail() {
       {/* Modal de Adelanto de Pago - Seleccionar Cuotas */}
       {advancePaymentMode && !advancePaymentMethod && (
         <div className="modal-overlay" onClick={handleCloseAdvancePaymentMode}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Adelantar Pago - Seleccionar Cuotas</h3>
-            <p style={{ color: '#666', marginBottom: '1.5rem' }}>
-              Selecciona una o más cuotas pendientes para pagar conjuntamente
-            </p>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '650px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <span style={{ fontSize: '2.5rem' }}>⏩</span>
+              <div>
+                <h3 style={{ marginTop: 0, marginBottom: '0.25rem' }}>Adelantar Pago de Cuotas</h3>
+                <p style={{ fontSize: '0.9rem', color: '#666', margin: 0 }}>Selecciona cuotas por orden de prioridad</p>
+              </div>
+            </div>
 
             {error && (
-              <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
+              <div className="badge badge-red" style={{ marginBottom: '1rem' }}>
                 {error}
               </div>
             )}
 
-            <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #ddd', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', backgroundColor: '#f9f9f9' }}>
+            {/* Cuotas pendientes - Ordenadas por número */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h5 style={{ marginBottom: '1rem', color: '#333' }}>Cuotas Pendientes</h5>
               {scheduleWithRemaining.filter(s => !s.isPaid).length === 0 ? (
-                <p style={{ color: '#666', textAlign: 'center' }}>No hay cuotas pendientes</p>
+                <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#999' }}>
+                  <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>✓ Todas las cuotas están pagadas</p>
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {scheduleWithRemaining.filter(s => !s.isPaid).map((installment) => (
-                    <label key={installment.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', backgroundColor: 'white', borderRadius: '6px', border: '1px solid #e0e0e0', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedInstallments.has(installment.id)}
-                        onChange={() => handleToggleInstallmentSelection(installment.id)}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div>
-                          <strong>Cuota #{installment.installmentNumber}</strong> - Vencimiento: {formatDate(installment.dueDate)}
-                        </div>
-                        <div style={{ fontSize: '0.9rem', color: '#666' }}>
-                          Pendiente: S/ {Number(installment.pendingTotal || installment.installmentAmount).toFixed(2)}
-                          {installment.lateFeeAmount > 0 && ` (incluye mora: S/ ${Number(installment.lateFeeAmount).toFixed(2)})`}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
+                <div style={{ display: 'grid', gap: '0.75rem', maxHeight: '450px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                  {scheduleWithRemaining
+                    .filter(s => !s.isPaid)
+                    .sort((a, b) => a.installmentNumber - b.installmentNumber)
+                    .map((installment) => {
+                      const isSelected = selectedInstallments.has(installment.id);
+                      const hasLateFee = installment.lateFeeAmount > 0;
+                      const daysOverdue = dayjs().diff(dayjs(installment.dueDate), 'day');
+                      const isOverdue = daysOverdue > 0;
+
+                      return (
+                        <label
+                          key={installment.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '1rem',
+                            padding: '1rem',
+                            backgroundColor: isSelected ? '#e3f2fd' : 'white',
+                            borderRadius: '8px',
+                            border: isSelected ? '2px solid #007bff' : '1px solid #e0e0e0',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            boxShadow: isSelected ? '0 2px 8px rgba(0, 123, 255, 0.15)' : 'none'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleInstallmentSelection(installment.id)}
+                            style={{ cursor: 'pointer', transform: 'scale(1.3)', accentColor: '#007bff' }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                              <strong style={{ fontSize: '1.15rem', color: '#333' }}>
+                                Cuota #{installment.installmentNumber}
+                              </strong>
+                              {isOverdue && (
+                                <span style={{
+                                  backgroundColor: '#ff6b6b',
+                                  color: 'white',
+                                  padding: '0.2rem 0.7rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 'bold'
+                                }}>
+                                  {daysOverdue}d VENCIDA
+                                </span>
+                              )}
+                              {hasLateFee && (
+                                <span style={{
+                                  backgroundColor: '#ffc107',
+                                  color: '#333',
+                                  padding: '0.2rem 0.7rem',
+                                  borderRadius: '12px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 'bold'
+                                }}>
+                                  ⚠️ MORA
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.85rem', color: '#666', marginBottom: '0.5rem' }}>
+                              📅 Vencimiento: <strong>{formatDate(installment.dueDate)}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.9rem', color: '#555' }}>Pendiente:</span>
+                              <strong style={{ fontSize: '1.1rem', color: '#007bff' }}>
+                                S/ {Number(installment.pendingTotal || installment.installmentAmount).toFixed(2)}
+                              </strong>
+                            </div>
+                            {hasLateFee && (
+                              <div style={{
+                                marginTop: '0.5rem',
+                                paddingTop: '0.5rem',
+                                borderTop: '1px solid #eee',
+                                fontSize: '0.8rem',
+                                color: '#d32f2f'
+                              }}>
+                                Mora: <strong>S/ {Number(installment.lateFeeAmount).toFixed(2)}</strong>
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
                 </div>
               )}
             </div>
 
+            {/* Resumen de selección */}
             {selectedInstallments.size > 0 && (
-              <div style={{ padding: '1rem', backgroundColor: '#e7f3ff', borderRadius: '8px', marginBottom: '1.5rem', borderLeft: '4px solid #007bff' }}>
-                <strong>Resumen:</strong>
-                <div style={{ marginTop: '0.5rem', fontSize: '0.95rem' }}>
-                  Cuotas seleccionadas: {selectedInstallments.size}
+              <div style={{
+                padding: '1.25rem',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                borderRadius: '8px',
+                marginBottom: '1.5rem',
+                color: 'white',
+                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+              }}>
+                <div style={{ marginBottom: '0.75rem', fontSize: '0.95rem', opacity: 0.9 }}>
+                  Cuotas seleccionadas: <strong>{selectedInstallments.size}</strong>
                 </div>
-                <div style={{ marginTop: '0.5rem', fontSize: '1.1rem', fontWeight: 'bold', color: '#007bff' }}>
-                  Total a pagar: S/ {scheduleWithRemaining
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>
+                  Total: S/ {scheduleWithRemaining
                     .filter(s => selectedInstallments.has(s.id))
                     .reduce((sum, s) => sum + (Number(s.pendingTotal) || 0), 0)
                     .toFixed(2)}
@@ -1264,12 +1346,14 @@ export default function LoanDetail() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'space-between' }}>
+            {/* Botones de acción */}
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 className="btn"
                 onClick={handleCloseAdvancePaymentMode}
                 disabled={processingPayment}
+                style={{ fontSize: '1rem', padding: '0.75rem 1.5rem' }}
               >
                 Cancelar
               </button>
@@ -1281,12 +1365,12 @@ export default function LoanDetail() {
                     setError('Selecciona al menos una cuota');
                     return;
                   }
-                  // Pasar al siguiente paso (seleccionar método de pago)
                   setAdvancePaymentMethod('pending');
                 }}
                 disabled={processingPayment || selectedInstallments.size === 0}
+                style={{ fontSize: '1rem', padding: '0.75rem 1.5rem' }}
               >
-                Continuar →
+                Continuar → ({selectedInstallments.size} cuota{selectedInstallments.size > 1 ? 's' : ''})
               </button>
             </div>
           </div>

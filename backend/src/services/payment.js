@@ -382,24 +382,13 @@ export async function registerAdvancePayment({
 
     console.log('✅ Pago adelantado creado:', { paymentId: newPayment.id, amount: paymentAmount, cuotasCount: selectedInstallments.length });
 
-    // 2. Marcar cuotas seleccionadas como pagadas
+    // 2. Marcar cuotas seleccionadas como pagadas (en orden)
     for (const installment of selectedInstallments) {
-      // Obtener todos los pagos para esta cuota (incluyendo el que acaba de crearse)
-      const allPaymentsForInstallment = await tx.payment.findMany({
-        where: { installmentId: installment.id },
+      await tx.paymentSchedule.update({
+        where: { id: installment.id },
+        data: { isPaid: true },
       });
-
-      const lateFeeDetails = calculateInstallmentLateFee(installment, allPaymentsForInstallment);
-      const outstandingAmount = Number(lateFeeDetails.pendingTotal ?? 0);
-      const shouldMarkAsPaid = outstandingAmount <= OUTSTANDING_TOLERANCE;
-
-      if (shouldMarkAsPaid) {
-        await tx.paymentSchedule.update({
-          where: { id: installment.id },
-          data: { isPaid: true },
-        });
-        console.log('✅ Cuota marcada como pagada:', installment.id);
-      }
+      console.log('✅ Cuota #' + installment.installmentNumber + ' marcada como pagada');
     }
 
     // 3. Marcar moras como pagadas si corresponde
