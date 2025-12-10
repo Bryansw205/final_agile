@@ -236,7 +236,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   if (payment.installmentsPaid && payment.installmentsPaid.length > 1) {
     // Mostrar cada cuota en una fila separada
     let currentY = rowY;
-    payment.installmentsPaid.forEach((inst) => {
+    payment.installmentsPaid.forEach((inst, idx) => {
       const rowVals = [
         '1 UNIDAD',
         `Cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
@@ -244,10 +244,12 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
         formatCurrency(inst.installmentAmount)
       ];
       x = startX + 8;
-      rowVals.forEach((val, idx) => {
-        doc.text(val, x, currentY + 8, { width: colWidths[idx] - 16, align: idx >= 2 ? 'right' : 'left' });
-        x += colWidths[idx];
+      rowVals.forEach((val, idxCol) => {
+        doc.text(val, x, currentY + 8, { width: colWidths[idxCol] - 16, align: idxCol >= 2 ? 'right' : 'left' });
+        x += colWidths[idxCol];
       });
+      // Línea separadora después de cada fila
+      doc.moveTo(startX, currentY + 20).lineTo(startX + contentWidth, currentY + 20).stroke();
       currentY += 20;
     });
     lastRowY = currentY;
