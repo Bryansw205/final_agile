@@ -442,10 +442,17 @@ export default function LoanDetail() {
       return;
     }
 
+    // Validar que todas las cuotas anteriores estén pagadas (cuotas seguidas)
+    const previousInstallments = scheduleWithRemaining.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
+    const firstUnpaid = previousInstallments.find(s => s.isPaid !== true);
+    if (firstUnpaid) {
+      setError(`No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${firstUnpaid.installmentNumber} completamente`);
+      return;
+    }
+
     const remainingBase = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0;
-    const maxAmount = remainingBase + (selectedInstallment.lateFeeAmount || 0);
-    if (amount > maxAmount) {
-      setError(`El monto no puede ser mayor a ${maxAmount.toFixed(2)}`);
+    if (amount > remainingBase) {
+      setError(`El monto no puede ser mayor a S/ ${remainingBase.toFixed(2)}`);
       return;
     }
 
@@ -693,7 +700,15 @@ export default function LoanDetail() {
                         <button
                           className="btn btn-sm"
                           onClick={() => handleOpenPaymentModal(row)}
-                          disabled={processingPayment || !cashSession}
+                          disabled={processingPayment || !cashSession || (() => {
+                            const previousInstallments = scheduleWithRemaining.filter(s => s.installmentNumber < row.installmentNumber);
+                            return previousInstallments.some(s => s.isPaid !== true);
+                          })()}
+                          title={(() => {
+                            const previousInstallments = scheduleWithRemaining.filter(s => s.installmentNumber < row.installmentNumber);
+                            const firstUnpaid = previousInstallments.find(s => s.isPaid !== true);
+                            return firstUnpaid ? `Debes pagar la cuota #${firstUnpaid.installmentNumber} primero` : '';
+                          })()}
                         >
                           Pagar
                         </button>
@@ -783,15 +798,14 @@ export default function LoanDetail() {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   step="0.01"
-                  max={(parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) + (selectedInstallment.lateFeeAmount || 0)).toFixed(2)}
+                  max={(parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount)).toFixed(2)}
                   min="0.01"
                   required
                   disabled={processingPayment}
                 />
                 <small>
                   Máximo: S/ {(
-                    parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) +
-                    (selectedInstallment.lateFeeAmount || 0)
+                    parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount)
                   ).toFixed(2)}
                 </small>
               </div>
