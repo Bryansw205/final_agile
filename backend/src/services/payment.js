@@ -57,8 +57,8 @@ export function applyRounding(amount) {
 
 /**
  * Calcula la mora para una cuota específica
- * Mora = 1% por cada período de 30 días sin pago
- * Se anula si hay pago parcial en el período
+ * Mora = 1% de la cuota, fija, se aplica UNA SOLA VEZ cuando vence
+ * No aumenta aunque pasen más meses sin pagar
  */
 export function calculateInstallmentLateFee(schedule, payments) {
   const today = dayjs.tz(new Date(), TZ);
@@ -70,7 +70,7 @@ export function calculateInstallmentLateFee(schedule, payments) {
   }
 
   // Si aún no está vencida, no hay mora
-  if (today.isBefore(dueDate)) {
+  if (today.isBefore(dueDate) || today.isSame(dueDate, 'day')) {
     return { hasLateFee: false, lateFeeAmount: 0 };
   }
 
@@ -84,19 +84,11 @@ export function calculateInstallmentLateFee(schedule, payments) {
     return { hasLateFee: false, lateFeeAmount: 0 };
   }
 
-  // Calcular días de atraso
-  const daysLate = today.diff(dueDate, 'day');
-  
-  // Calcular períodos completos de 30 días
-  const periodsLate = Math.floor(daysLate / 30);
-
-  if (periodsLate === 0) {
-    return { hasLateFee: false, lateFeeAmount: 0 };
-  }
-
-  // Mora = 1% por cada período de 30 días
+  // Mora FIJA = 1% de la cuota (no acumulativa, no aumenta con el tiempo)
+  // Ejemplo: cuota S/94.56 → mora = 94.56 × 0.01 = S/0.95
+  // Total a pagar = S/95.51 (sin importar cuántos meses pasen)
   const installmentAmount = Number(schedule.installmentAmount);
-  const lateFeeAmount = round2(installmentAmount * (0.01 * periodsLate));
+  const lateFeeAmount = round2(installmentAmount * 0.01);
 
   return { hasLateFee: true, lateFeeAmount };
 }
@@ -301,7 +293,14 @@ export async function registerPayment({
   let paymentAmount = Number(amount);
   let roundingAdjustment = 0;
 
-  // Aplicar redondeo solo si es efectivo
+  // Calcular el máximo permitido según el método de pago
+  // EFECTIVO: máximo redondeado | Otros métodos: máximo original (sin redondear)
+  let maxAllowed = pendingTotal;
+  if (paymentMethod === 'EFECTIVO') {
+    maxAllowed = applyRounding(pendingTotal);
+  }
+
+  // Aplicar redondeo al monto del pago solo si es efectivo
   if (paymentMethod === 'EFECTIVO') {
     const roundedAmount = applyRounding(paymentAmount);
     roundingAdjustment = round2(roundedAmount - paymentAmount);
@@ -331,8 +330,8 @@ export async function registerPayment({
     }
   }
 
-  if (paymentAmount > pendingTotal) {
-    throw new Error(`El monto del pago supera la deuda pendiente total (máximo S/ ${pendingTotal.toFixed(2)})`);
+  if (paymentAmount > maxAllowed) {
+    throw new Error(`El monto del pago supera la deuda pendiente total (máximo S/ ${maxAllowed.toFixed(2)})`);
   }
 
   // Validar incrementos en efectivo: solo múltiplos de 0.10
