@@ -194,7 +194,6 @@ async function buildAdvancePaymentContext({
   installmentIds,
   registeredByUserId,
   cashSessionId,
-  enforcePreviousPaid = true,
 }) {
   if (!cashSessionId) {
     throw new Error('Debe abrir una sesiГіn de caja antes de registrar pagos');
@@ -245,6 +244,7 @@ async function buildAdvancePaymentContext({
     throw new Error(`Las cuotas ${alreadyPaid.map(s => `#${s.installmentNumber}`).join(', ')} ya estГЎn pagadas`);
   }
 
+<<<<<<< HEAD
   if (enforcePreviousPaid) {
     for (const selectedInstallment of selectedInstallments) {
       const previousInstallments = loan.schedules.filter(
@@ -259,12 +259,22 @@ async function buildAdvancePaymentContext({
           });
           continue;
         }
+=======
+  for (const selectedInstallment of selectedInstallments) {
+    const previousInstallments = loan.schedules.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
+    for (const prevInstallment of previousInstallments) {
+      // Si la cuota anterior tambiÇ¸n estÇ­ incluida en la selecciÇün actual, se pagarÇ­ en la misma operaciÇün
+      if (normalizedInstallmentIds.includes(prevInstallment.id)) {
+        continue;
+      }
+>>>>>>> parent of a8a6096 (chux)
 
-        if (prevInstallment.isPaid === false) {
-          const paymentsForPrevious = loan.payments.filter((p) => p.installmentId === prevInstallment.id);
-          const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
-          const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
+      if (prevInstallment.isPaid === false) {
+        const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
+        const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
+        const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
 
+<<<<<<< HEAD
           console.log('[ADVANCE] Validando cuota previa pendiente:', {
             targetInstallment: selectedInstallment.installmentNumber,
             previousInstallment: prevInstallment.installmentNumber,
@@ -278,6 +288,12 @@ async function buildAdvancePaymentContext({
               `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
             );
           }
+=======
+        if (previousOutstanding > OUTSTANDING_TOLERANCE) {
+          throw new Error(
+            `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
+          );
+>>>>>>> parent of a8a6096 (chux)
         }
       }
     }
@@ -310,7 +326,6 @@ export async function calculateAdvancePaymentAmount({
     installmentIds,
     registeredByUserId,
     cashSessionId,
-    enforcePreviousPaid: false,
   });
 }
 
@@ -347,7 +362,6 @@ export async function registerAdvancePayment({
     installmentIds,
     registeredByUserId,
     cashSessionId,
-    enforcePreviousPaid: false,
   });
 
   let paymentAmount = Number(amount);
