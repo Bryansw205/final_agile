@@ -164,6 +164,20 @@ export default function LoanDetail() {
             if (pollInterval) clearInterval(pollInterval);
             console.log('✅ Pago Flow exitoso detectado:', flowPayments[0]);
             
+            // Cerrar ventana de Flow si está abierta
+            try {
+              if (localStorage.getItem('flowWindowOpen') === 'true') {
+                const flowWindow = window.opener;
+                if (flowWindow && !flowWindow.closed) {
+                  flowWindow.close();
+                }
+              }
+            } catch (e) {
+              console.log('No se pudo cerrar ventana de Flow (probablemente en diferente dominio)');
+            }
+            localStorage.removeItem('flowWindowOpen');
+            localStorage.removeItem('flowLoanId');
+            
             // Actualizar estado
             setSuccess('¡Pago con Flow realizado exitosamente!');
             setSearchParams({});
@@ -576,8 +590,20 @@ export default function LoanDetail() {
           installmentId: selectedInstallment.id,
         });
 
-        // Redirigir a Flow
-        window.location.href = flowResponse.paymentUrl;
+        // Abrir Flow en una nueva ventana/pestaña
+        const flowWindow = window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
+        
+        // Guardar referencia a la ventana en estado local para poder cerrarla después
+        localStorage.setItem('flowWindowOpen', 'true');
+        localStorage.setItem('flowLoanId', String(id));
+        
+        // Cerrar modal de pago
+        handleClosePaymentModal();
+        
+        // Iniciar polling para detectar cuando el pago se complete
+        setTimeout(() => {
+          verifyFlowPaymentAutomatic();
+        }, 1000);
       } else {
         // Pago con efectivo
         const paymentPayload = {
@@ -669,7 +695,21 @@ export default function LoanDetail() {
           email: 'cliente@example.com',
           installmentIds,
         });
-        window.location.href = flowResponse.paymentUrl;
+        
+        // Abrir Flow en una nueva ventana/pestaña
+        const flowWindow = window.open(flowResponse.paymentUrl, 'flow_payment', 'width=600,height=800');
+        
+        // Guardar referencia a la ventana
+        localStorage.setItem('flowWindowOpen', 'true');
+        localStorage.setItem('flowLoanId', String(id));
+        
+        // Cerrar modal de pago adelantado
+        handleCloseAdvancePaymentMode();
+        
+        // Iniciar polling para detectar cuando el pago se complete
+        setTimeout(() => {
+          verifyFlowPaymentAutomatic();
+        }, 1000);
       } else {
         // Pago adelantado con efectivo
         const installmentIds = Array.from(selectedInstallments);
