@@ -67,7 +67,7 @@ router.post(
         email: ownerEmail,
         commerceOrder,
         urlConfirmation: `${baseUrl}/flow/webhook`,
-        urlReturn: `${frontendUrl}/loans/${loanId}?from=flow&token={token}`,
+        urlReturn: `${frontendUrl}/loans/${loanId}?from=flow`,
         paymentMethod: 9, // 9 = Todos los medios de pago
         optional: { loanId, userId, installmentId: installmentId || null, cashSessionId: cashSession.id, commerceOrder },
       });
