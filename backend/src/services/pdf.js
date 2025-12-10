@@ -231,10 +231,10 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   const rowY = headerY + 24;
   x = startX + 8;
 
-  // Si es un pago adelantado con múltiples cuotas O tiene installmentsPaid, mostrar el detalle
+  // Si tiene installmentsPaid, mostrar cada cuota en fila separada
   let lastRowY = rowY;
   if (payment.installmentsPaid && payment.installmentsPaid.length > 0) {
-    // Mostrar cada cuota en una fila separada
+    // Mostrar cada cuota en una fila separada con línea divisoria
     let currentY = rowY;
     payment.installmentsPaid.forEach((inst, idx) => {
       const rowVals = [
@@ -248,16 +248,16 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
         doc.text(val, x, currentY + 8, { width: colWidths[idxCol] - 16, align: idxCol >= 2 ? 'right' : 'left' });
         x += colWidths[idxCol];
       });
-      // Línea separadora después de cada fila
-      doc.moveTo(startX, currentY + 20).lineTo(startX + contentWidth, currentY + 20).stroke();
       currentY += 20;
+      // Línea separadora después de cada fila de cuota
+      doc.moveTo(startX, currentY).lineTo(startX + contentWidth, currentY).stroke();
     });
     lastRowY = currentY;
   } else {
-    // Pago individual sin installmentsPaid (compatibilidad)
+    // Pago sin installmentsPaid (compatibilidad - no debería ocurrir)
     const rowVals = [
       '1 UNIDAD',
-      `Pago cuota #1`,
+      `Pago cuota`,
       formatCurrency(total),
       formatCurrency(total)
     ];
@@ -267,10 +267,10 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
       x += colWidths[idx];
     });
     lastRowY = rowY + 20;
+    doc.moveTo(startX, lastRowY).lineTo(startX + contentWidth, lastRowY).stroke();
   }
 
-  // Línea separadora
-  doc.moveTo(startX, lastRowY).lineTo(startX + contentWidth, lastRowY).stroke();  // Totales
+  // Totales
   const totalsY = lastRowY + 12;
   doc.font('Helvetica-Bold');
   doc.text('OP. GRAVADA', startX + colWidths[0] + colWidths[1], totalsY, { width: colWidths[2], align: 'right' });
