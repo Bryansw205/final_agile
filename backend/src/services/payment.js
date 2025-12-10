@@ -241,59 +241,26 @@ async function buildAdvancePaymentContext({
 
   const alreadyPaid = selectedInstallments.filter(s => s.isPaid === true);
   if (alreadyPaid.length > 0) {
-    throw new Error(`Las cuotas ${alreadyPaid.map(s => `#${s.installmentNumber}`).join(', ')} ya estГЎn pagadas`);
+    throw new Error(`Las cuotas ${alreadyPaid.map(s => `#${s.installmentNumber}`).join(', ')} ya están pagadas`);
   }
 
-<<<<<<< HEAD
-  if (enforcePreviousPaid) {
-    for (const selectedInstallment of selectedInstallments) {
-      const previousInstallments = loan.schedules.filter(
-        (s) => s.installmentNumber < selectedInstallment.installmentNumber
-      );
-      for (const prevInstallment of previousInstallments) {
-        // Si la cuota anterior también está incluida en la selección actual, se pagará en la misma operación
-        if (normalizedInstallmentIds.includes(prevInstallment.id)) {
-          console.log('[ADVANCE] Saltando validación de cuota previa porque está seleccionada en el mismo pago:', {
-            selectedInstallment: selectedInstallment.installmentNumber,
-            previousInstallment: prevInstallment.installmentNumber,
-          });
-          continue;
-        }
-=======
   for (const selectedInstallment of selectedInstallments) {
     const previousInstallments = loan.schedules.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
     for (const prevInstallment of previousInstallments) {
-      // Si la cuota anterior tambiÇ¸n estÇ­ incluida en la selecciÇün actual, se pagarÇ­ en la misma operaciÇün
+      // Si la cuota anterior también está incluida en la selección actual, se pagará en la misma operación
       if (normalizedInstallmentIds.includes(prevInstallment.id)) {
         continue;
       }
->>>>>>> parent of a8a6096 (chux)
 
       if (prevInstallment.isPaid === false) {
         const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
         const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
         const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
 
-<<<<<<< HEAD
-          console.log('[ADVANCE] Validando cuota previa pendiente:', {
-            targetInstallment: selectedInstallment.installmentNumber,
-            previousInstallment: prevInstallment.installmentNumber,
-            previousOutstanding: previousOutstanding.toFixed(2),
-            tolerance: OUTSTANDING_TOLERANCE,
-            enforcePreviousPaid,
-          });
-
-          if (previousOutstanding > OUTSTANDING_TOLERANCE) {
-            throw new Error(
-              `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
-            );
-          }
-=======
         if (previousOutstanding > OUTSTANDING_TOLERANCE) {
           throw new Error(
             `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
           );
->>>>>>> parent of a8a6096 (chux)
         }
       }
     }
@@ -542,323 +509,6 @@ export async function registerAdvancePayment({
   });
 
   payment.installmentsPaid = orderedInstallments.map((s) => ({
-    id: s.id,
-    installmentNumber: s.installmentNumber,
-    dueDate: s.dueDate,
-    installmentAmount: Number(s.installmentAmount),
-  }));
-
-  return payment;
-}
-
-/**
- * Registra un pago adelantado para múltiples cuotas
- * Este pago NO afecta la estructura de datos existente, solo agrega un nuevo registro
- */
-export async function registerAdvancePayment({
-  loanId,
-  amount,
-  paymentMethod,
-  registeredByUserId,
-  cashSessionId,
-  installmentIds, // Array de IDs de cuotas seleccionadas
-  externalReference,
-}) {
-  console.log('📝 registerAdvancePayment llamado con:', {
-    loanId,
-    amount,
-    paymentMethod,
-    registeredByUserId,
-    cashSessionId,
-    installmentIds,
-    externalReference
-  });
-
-  // Validar que exista una sesión de caja abierta
-  if (!cashSessionId) {
-    throw new Error('Debe abrir una sesión de caja antes de registrar pagos');
-  }
-
-  const cashSession = await prisma.cashSession.findUnique({
-    where: { id: Number(cashSessionId) },
-    select: { id: true, isClosed: true, userId: true },
-  });
-
-  if (!cashSession) {
-    throw new Error('Sesión de caja no encontrada');
-  }
-
-  if (cashSession.isClosed) {
-    throw new Error('La sesión de caja está cerrada. Abra una nueva antes de registrar pagos');
-  }
-
-  if (cashSession.userId !== registeredByUserId) {
-    throw new Error('La sesión de caja abierta pertenece a otro usuario');
-  }
-
-  // Validar que haya al menos una cuota seleccionada
-  if (!installmentIds || installmentIds.length === 0) {
-    throw new Error('Debe seleccionar al menos una cuota');
-  }
-
-  // Validar préstamo
-  const loan = await prisma.loan.findUnique({
-    where: { id: loanId },
-    include: {
-      schedules: { orderBy: { installmentNumber: 'asc' } },
-      payments: true,
-      lateFees: { where: { isPaid: false }, orderBy: { createdAt: 'asc' } },
-      client: true,
-    },
-  });
-
-  if (!loan) throw new Error('Préstamo no encontrado');
-
-  // Validar que todas las cuotas seleccionadas existan y pertenezcan a este préstamo
-  const selectedInstallments = loan.schedules.filter(s => installmentIds.includes(s.id));
-  if (selectedInstallments.length !== installmentIds.length) {
-    throw new Error('Una o más cuotas seleccionadas no existen o no pertenecen a este préstamo');
-  }
-
-  // Validar que ninguna cuota seleccionada esté ya pagada
-  const alreadyPaid = selectedInstallments.filter(s => s.isPaid === true);
-  if (alreadyPaid.length > 0) {
-    throw new Error(`Las cuotas ${alreadyPaid.map(s => `#${s.installmentNumber}`).join(', ')} ya están pagadas`);
-  }
-
-  // Validar que todas las cuotas anteriores de cada cuota seleccionada estén pagadas
-  for (const selectedInstallment of selectedInstallments) {
-    const previousInstallments = loan.schedules.filter(s => s.installmentNumber < selectedInstallment.installmentNumber);
-    for (const prevInstallment of previousInstallments) {
-      if (prevInstallment.isPaid === false) {
-        const paymentsForPrevious = loan.payments.filter(p => p.installmentId === prevInstallment.id);
-        
-        // Calcular lo que realmente falta pagar (usando calculateInstallmentLateFee que es la función correcta)
-        const lateFeeInfo = calculateInstallmentLateFee(prevInstallment, paymentsForPrevious);
-        const previousOutstanding = Number(lateFeeInfo.pendingTotal || 0);
-
-        if (previousOutstanding > OUTSTANDING_TOLERANCE) {
-          throw new Error(
-            `No puedes pagar la cuota #${selectedInstallment.installmentNumber} hasta que hayas pagado la cuota #${prevInstallment.installmentNumber} completamente. Pendiente: S/ ${previousOutstanding.toFixed(2)}`
-          );
-        }
-      }
-    }
-  }
-
-  // Calcular el total exacto adeudado para las cuotas seleccionadas
-  let totalOwed = 0;
-  for (const installment of selectedInstallments) {
-    const paymentsForInstallment = loan.payments.filter(p => p.installmentId === installment.id);
-    const lateFeeInfo = calculateInstallmentLateFee(installment, paymentsForInstallment);
-    const pendingTotal = Number(lateFeeInfo.pendingTotal || 0);
-    totalOwed += pendingTotal;
-  }
-  totalOwed = round2(totalOwed);
-
-  let paymentAmount = Number(amount);
-  let roundingAdjustment = 0;
-
-  // Calcular el máximo permitido según el método de pago
-  // EFECTIVO: máximo redondeado | Otros métodos: máximo original (sin redondear)
-  let maxAllowed = totalOwed;
-  if (paymentMethod === 'EFECTIVO') {
-    maxAllowed = applyRounding(totalOwed);
-  }
-
-  // Aplicar redondeo al monto del pago solo si es efectivo
-  if (paymentMethod === 'EFECTIVO') {
-    const roundedAmount = applyRounding(paymentAmount);
-    roundingAdjustment = round2(roundedAmount - paymentAmount);
-    paymentAmount = roundedAmount;
-  }
-
-  if (paymentAmount <= 0) {
-    throw new Error('El monto del pago debe ser mayor a cero');
-  }
-
-  // Validar que el monto sea exacto para las cuotas seleccionadas
-  if (Math.abs(paymentAmount - totalOwed) > OUTSTANDING_TOLERANCE) {
-    throw new Error(`El monto debe ser exactamente S/ ${totalOwed.toFixed(2)}. Ingresó S/ ${paymentAmount.toFixed(2)}`);
-  }
-
-  // Validar que en EFECTIVO el monto sea múltiplo de S/ 0.10
-  if (paymentMethod === 'EFECTIVO') {
-    const cents = Math.round(paymentAmount * 100);
-    if (cents % 10 !== 0) {
-      throw new Error('Para pagos en efectivo, solo se permiten montos en múltiplos de S/ 0.10');
-    }
-  }
-
-  if (
-    (paymentMethod === 'BILLETERA_DIGITAL' || paymentMethod === 'TARJETA_DEBITO') &&
-    paymentAmount < 2
-  ) {
-    throw new Error('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
-  }
-
-  // Ordenar cuotas por número para distribuir en orden
-  const orderedInstallments = [...selectedInstallments].sort((a, b) => a.installmentNumber - b.installmentNumber);
-
-  const receiptNumber = generateReceiptNumber();
-  let remaining = paymentAmount;
-  const paymentsCreated = [];
-
-  // Crear UN PAGO POR CADA CUOTA (igual que si las pagara una por una)
-  const payment = await prisma.$transaction(async (tx) => {
-    for (const installment of orderedInstallments) {
-      if (remaining <= 0) break;
-
-      // Obtener pagos anteriores para esta cuota (dentro de la transacción)
-      const paymentsForInstallment = await tx.payment.findMany({
-        where: { installmentId: installment.id },
-      });
-
-      // Calcular lo que falta pagar en esta cuota
-      const lateFeeInfo = calculateInstallmentLateFee(installment, paymentsForInstallment);
-      
-      let installmentInterestRemaining = Number(installment.interestAmount) - 
-        paymentsForInstallment.reduce((sum, p) => sum + Number(p.interestPaid || 0), 0);
-      installmentInterestRemaining = Math.max(0, round2(installmentInterestRemaining));
-
-      let installmentPrincipalRemaining = Number(installment.principalAmount) - 
-        paymentsForInstallment.reduce((sum, p) => sum + Number(p.principalPaid || 0), 0);
-      installmentPrincipalRemaining = Math.max(0, round2(installmentPrincipalRemaining));
-
-      let installmentLateFeePending = Number(lateFeeInfo.lateFeeAmount || 0);
-
-      // Calcular cuánto pagar en esta cuota con el remaining disponible
-      let paymentForThisInstallment = 0;
-      let installmentInterestPaid = 0;
-      let installmentPrincipalPaid = 0;
-      let installmentLateFeePaid = 0;
-
-      // Pagar interés de esta cuota
-      if (installmentInterestRemaining > 0 && remaining > 0) {
-        const toPay = Math.min(remaining, installmentInterestRemaining);
-        installmentInterestPaid = round2(toPay);
-        paymentForThisInstallment = round2(paymentForThisInstallment + toPay);
-        remaining = round2(remaining - toPay);
-        installmentInterestRemaining = round2(installmentInterestRemaining - toPay);
-      }
-
-      // Pagar principal de esta cuota
-      if (installmentPrincipalRemaining > 0 && remaining > 0) {
-        const toPay = Math.min(remaining, installmentPrincipalRemaining);
-        installmentPrincipalPaid = round2(toPay);
-        paymentForThisInstallment = round2(paymentForThisInstallment + toPay);
-        remaining = round2(remaining - toPay);
-        installmentPrincipalRemaining = round2(installmentPrincipalRemaining - toPay);
-      }
-
-      // Pagar mora si el principal e interés están cubiertos
-      if (installmentInterestRemaining <= OUTSTANDING_TOLERANCE && 
-          installmentPrincipalRemaining <= OUTSTANDING_TOLERANCE && 
-          installmentLateFeePending > 0 && remaining > 0) {
-        const toPay = Math.min(remaining, installmentLateFeePending);
-        installmentLateFeePaid = round2(toPay);
-        paymentForThisInstallment = round2(paymentForThisInstallment + toPay);
-        remaining = round2(remaining - toPay);
-      }
-
-      // Solo crear el pago si hay algo que pagar en esta cuota
-      if (paymentForThisInstallment > 0) {
-        const newPayment = await tx.payment.create({
-          data: {
-            loanId,
-            installmentId: installment.id, // Asociar con ESTA cuota específica
-            registeredByUserId,
-            amount: paymentForThisInstallment,
-            paymentMethod,
-            principalPaid: installmentPrincipalPaid,
-            interestPaid: installmentInterestPaid,
-            lateFeePaid: installmentLateFeePaid,
-            roundingAdjustment: 0, // Sin redondeo por ahora para cada pago individual
-            externalReference,
-            receiptNumber, // Todos comparten el mismo recibo
-            cashSessionId,
-            paymentDate: new Date(),
-          },
-        });
-
-        console.log('✅ Pago creado para cuota #' + installment.installmentNumber + ':', {
-          paymentId: newPayment.id,
-          amount: paymentForThisInstallment,
-          interest: installmentInterestPaid,
-          principal: installmentPrincipalPaid,
-          lateFee: installmentLateFeePaid,
-        });
-
-        paymentsCreated.push(newPayment);
-
-        // Verificar si esta cuota está ahora completamente pagada
-        const allPaymentsNow = await tx.payment.findMany({
-          where: { installmentId: installment.id },
-        });
-
-        const lateFeeDetailsNow = calculateInstallmentLateFee(installment, allPaymentsNow);
-        const outstandingAmount = Number(lateFeeDetailsNow.pendingTotal || 0);
-
-        if (outstandingAmount <= OUTSTANDING_TOLERANCE) {
-          await tx.paymentSchedule.update({
-            where: { id: installment.id },
-            data: { 
-              isPaid: true,
-              remainingBalance: 0, // Establecer saldo restante a 0 cuando se paga
-            },
-          });
-          console.log('✅ Cuota #' + installment.installmentNumber + ' marcada como pagada');
-        }
-
-        // Marcar moras como pagadas si se pagaron
-        if (installmentLateFeePaid > 0) {
-          let remainingLateFee = installmentLateFeePaid;
-          const lateFees = await tx.lateFee.findMany({
-            where: { loanId, isPaid: false },
-            orderBy: { createdAt: 'asc' },
-          });
-
-          for (const fee of lateFees) {
-            if (remainingLateFee <= 0) break;
-            
-            const feeAmount = Number(fee.feeAmount);
-            if (remainingLateFee >= feeAmount) {
-              await tx.lateFee.update({
-                where: { id: fee.id },
-                data: { isPaid: true },
-              });
-              remainingLateFee = round2(remainingLateFee - feeAmount);
-            }
-          }
-        }
-      }
-    }
-
-    // Retornar el primer pago como referencia (o un pago consolidado)
-    if (paymentsCreated.length > 0) {
-      return await tx.payment.findUnique({
-        where: { id: paymentsCreated[0].id },
-        include: {
-          loan: {
-            include: {
-              client: true,
-            },
-          },
-          registeredBy: {
-            select: {
-              id: true,
-              username: true,
-            },
-          },
-        },
-      });
-    }
-
-    throw new Error('No se pudieron crear los pagos');
-  });
-
-  // Incluir información de cuotas pagadas en la respuesta
-  payment.installmentsPaid = orderedInstallments.map(s => ({
     id: s.id,
     installmentNumber: s.installmentNumber,
     dueDate: s.dueDate,
@@ -1284,6 +934,7 @@ export async function registerPayment({
 
   return payment;
 }
+
 
 /**
  * Obtiene el estado de cuenta de un préstamo
