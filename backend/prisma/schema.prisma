@@ -8,6 +8,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ReceiptType {
+  BOLETA
+  FACTURA
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   username     String   @unique
@@ -95,6 +100,10 @@ model Payment {
   cashSessionId    Int?
   cashSession      CashSession?  @relation(fields: [cashSessionId], references: [id])
   createdAt        DateTime      @default(now())
+  receiptType      ReceiptType   @default(BOLETA)
+  invoiceRuc       String?
+  invoiceBusinessName String?
+  invoiceAddress   String?
 
   @@index([loanId])
   @@index([paymentDate])

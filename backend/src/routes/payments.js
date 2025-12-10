@@ -72,6 +72,10 @@ router.post(
           interestPaid: Number(payment.interestPaid),
           lateFeePaid: Number(payment.lateFeePaid),
           roundingAdjustment: Number(payment.roundingAdjustment),
+          receiptType: payment.receiptType,
+          invoiceRuc: payment.invoiceRuc,
+          invoiceBusinessName: payment.invoiceBusinessName,
+          invoiceAddress: payment.invoiceAddress,
           loan: {
             id: payment.loan.id,
             client: payment.loan.client,
@@ -201,15 +205,12 @@ router.get(
         }
       }
 
-      const type = (req.query.type || 'boleta').toString().toLowerCase();
-      if (!['boleta', 'factura'].includes(type)) {
-        return res.status(400).json({ error: 'Tipo de comprobante inválido' });
-      }
+      const type = (payment.receiptType || 'BOLETA').toLowerCase();
       const invoiceInfo = {
         type,
-        customerRuc: req.query.customerRuc || '',
-        customerName: req.query.customerName || '',
-        customerAddress: req.query.customerAddress || '',
+        customerRuc: payment.invoiceRuc || '',
+        customerName: payment.invoiceBusinessName || '',
+        customerAddress: payment.invoiceAddress || '',
       };
 
       const doc = createPdfDocument();
@@ -266,6 +267,10 @@ router.get(
           lateFeePaid: Number(p.lateFeePaid),
           roundingAdjustment: Number(p.roundingAdjustment),
           registeredBy: p.registeredBy,
+          receiptType: p.receiptType,
+          invoiceRuc: p.invoiceRuc,
+          invoiceBusinessName: p.invoiceBusinessName,
+          invoiceAddress: p.invoiceAddress,
         })),
       });
     } catch (error) {
@@ -304,6 +309,10 @@ router.get(
           interestPaid: Number(p.interestPaid),
           lateFeePaid: Number(p.lateFeePaid),
           roundingAdjustment: Number(p.roundingAdjustment),
+          receiptType: p.receiptType,
+          invoiceRuc: p.invoiceRuc,
+          invoiceBusinessName: p.invoiceBusinessName,
+          invoiceAddress: p.invoiceAddress,
         })),
         lateFees: statement.lateFees.map(f => ({
           ...f,
@@ -426,6 +435,50 @@ router.post(
           },
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /payments/:id/receipt-info
+ * Guarda el tipo de comprobante e info de factura
+ */
+router.post(
+  '/:id/receipt-info',
+  requireAuth,
+  param('id').isInt({ gt: 0 }),
+  body('receiptType').isIn(['BOLETA', 'FACTURA']),
+  body('invoiceRuc').optional().isString(),
+  body('invoiceBusinessName').optional().isString(),
+  body('invoiceAddress').optional().isString(),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const { receiptType, invoiceRuc, invoiceBusinessName, invoiceAddress } = req.body;
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+
+      const updated = await prisma.payment.update({
+        where: { id },
+        data: {
+          receiptType,
+          invoiceRuc: invoiceRuc || null,
+          invoiceBusinessName: invoiceBusinessName || null,
+          invoiceAddress: invoiceAddress || null,
+        },
+        select: {
+          id: true,
+          receiptType: true,
+          invoiceRuc: true,
+          invoiceBusinessName: true,
+          invoiceAddress: true,
+        },
+      });
+
+      res.json({ success: true, payment: updated });
     } catch (error) {
       next(error);
     }

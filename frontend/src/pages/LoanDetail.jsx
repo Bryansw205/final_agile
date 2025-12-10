@@ -35,9 +35,9 @@ export default function LoanDetail() {
   const [paymentMethod, setPaymentMethod] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [cashSession, setCashSession] = useState(null);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [showReceiptConfig, setShowReceiptConfig] = useState(false);
   const [receiptPayment, setReceiptPayment] = useState(null);
-  const [receiptType, setReceiptType] = useState('boleta');
+  const [receiptType, setReceiptType] = useState('BOLETA');
   const [invoiceRuc, setInvoiceRuc] = useState('');
   const [invoiceName, setInvoiceName] = useState('');
   const [invoiceAddress, setInvoiceAddress] = useState('');
@@ -442,21 +442,10 @@ export default function LoanDetail() {
     setPaymentAmount(e.target.value);
   }
 
-  function handleOpenReceiptModal(payment) {
-    setReceiptPayment(payment);
-    setReceiptType('boleta');
-    setInvoiceRuc('');
-    setInvoiceName('');
-    setInvoiceAddress('');
-    setShowReceiptModal(true);
-    setError('');
-    setSuccess('');
-  }
-
   function handleCloseReceiptModal() {
-    setShowReceiptModal(false);
+    setShowReceiptConfig(false);
     setReceiptPayment(null);
-    setReceiptType('boleta');
+    setReceiptType('BOLETA');
     setInvoiceRuc('');
     setInvoiceName('');
     setInvoiceAddress('');
@@ -479,13 +468,12 @@ export default function LoanDetail() {
     }
   }
 
-  async function handleDownloadReceipt(e) {
+  async function handleSaveReceiptInfo(e) {
     e.preventDefault();
     if (!receiptPayment) return;
-
-    if (receiptType === 'factura') {
-      if (!invoiceRuc || invoiceRuc.trim().length < 8) {
-        setError('Ingrese un RUC válido para factura');
+    if (receiptType === 'FACTURA') {
+      if (!/^[0-9]{11}$/.test((invoiceRuc || '').trim())) {
+        setError('Ingrese un RUC válido de 11 dígitos');
         return;
       }
       if (!invoiceName.trim()) {
@@ -494,19 +482,20 @@ export default function LoanDetail() {
       }
     }
 
-    const params = new URLSearchParams();
-    params.set('type', receiptType);
-    if (receiptType === 'factura') {
-      params.set('customerRuc', invoiceRuc.trim());
-      params.set('customerName', invoiceName.trim());
-      if (invoiceAddress.trim()) params.set('customerAddress', invoiceAddress.trim());
+    try {
+      setError('');
+      await apiPost(`/payments/${receiptPayment.id}/receipt-info`, {
+        receiptType,
+        invoiceRuc: invoiceRuc || null,
+        invoiceBusinessName: invoiceName || null,
+        invoiceAddress: invoiceAddress || null,
+      });
+      setSuccess('Comprobante guardado');
+      handleCloseReceiptModal();
+      await load();
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el comprobante');
     }
-
-    await apiDownload(
-      `/payments/${receiptPayment.id}/receipt?${params.toString()}`,
-      `comprobante-${receiptPayment.receiptNumber}.pdf`
-    );
-    handleCloseReceiptModal();
   }
 
   async function handlePayment(e) {
@@ -600,7 +589,8 @@ export default function LoanDetail() {
         };
 
         console.log('📤 Enviando pago:', paymentPayload);
-        await apiPost('/payments', paymentPayload);
+        const resp = await apiPost('/payments', paymentPayload);
+        const newPayment = resp?.payment;
         console.log('✅ Pago registrado, recargando datos...');
 
         setSuccess('Pago registrado exitosamente');
@@ -609,6 +599,16 @@ export default function LoanDetail() {
         await new Promise(resolve => setTimeout(resolve, 500));
         
         handleClosePaymentModal();
+
+        // Abrir configuración de comprobante
+        if (newPayment) {
+          setReceiptPayment(newPayment);
+          setReceiptType((newPayment.receiptType || 'BOLETA').toUpperCase());
+          setInvoiceRuc(newPayment.invoiceRuc || '');
+          setInvoiceName(newPayment.invoiceBusinessName || '');
+          setInvoiceAddress(newPayment.invoiceAddress || '');
+          setShowReceiptConfig(true);
+        }
         
         // Recargar todos los datos
         console.log('🔄 Recargando datos del préstamo...');
@@ -974,11 +974,8 @@ export default function LoanDetail() {
                   <td>S/ {payment.lateFeePaid.toFixed(2)}</td>
                   <td>{payment.receiptNumber}</td>
                   <td>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => handleOpenReceiptModal(payment)}
-                    >
-                      Descargar
+                    <button className="btn btn-sm" onClick={() => apiDownload(`/payments/${payment.id}/receipt`, `comprobante-${payment.receiptNumber}.pdf`)}>
+                      Ver
                     </button>
                   </td>
                 </tr>
@@ -1155,11 +1152,11 @@ export default function LoanDetail() {
         </div>
       )}
 
-      {/* Modal de Comprobante */}
-      {showReceiptModal && receiptPayment && (
+      {/* Modal de configuración de comprobante (después de pagar) */}
+      {showReceiptConfig && receiptPayment && (
         <div className="modal-overlay" onClick={handleCloseReceiptModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ marginTop: 0 }}>Descargar Comprobante</h3>
+            <h3 style={{ marginTop: 0 }}>Configurar Comprobante</h3>
 
             {error && (
               <div className="badge badge-red" style={{ marginBottom: '0.75rem' }}>
@@ -1167,7 +1164,7 @@ export default function LoanDetail() {
               </div>
             )}
 
-            <form onSubmit={handleDownloadReceipt}>
+            <form onSubmit={handleSaveReceiptInfo}>
               <div className="form-group">
                 <label>Tipo de Comprobante</label>
                 <div style={{ display: 'flex', gap: '1rem' }}>
@@ -1175,8 +1172,8 @@ export default function LoanDetail() {
                     <input
                       type="radio"
                       name="receiptType"
-                      value="boleta"
-                      checked={receiptType === 'boleta'}
+                      value="BOLETA"
+                      checked={receiptType === 'BOLETA'}
                       onChange={(e) => setReceiptType(e.target.value)}
                     />
                     Boleta
@@ -1185,8 +1182,8 @@ export default function LoanDetail() {
                     <input
                       type="radio"
                       name="receiptType"
-                      value="factura"
-                      checked={receiptType === 'factura'}
+                      value="FACTURA"
+                      checked={receiptType === 'FACTURA'}
                       onChange={(e) => setReceiptType(e.target.value)}
                     />
                     Factura
@@ -1194,7 +1191,7 @@ export default function LoanDetail() {
                 </div>
               </div>
 
-              {receiptType === 'factura' && (
+              {receiptType === 'FACTURA' && (
                 <>
                   <div className="form-group">
                     <label htmlFor="invoiceRuc">RUC</label>
@@ -1238,7 +1235,7 @@ export default function LoanDetail() {
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Descargar
+                  Guardar
                 </button>
               </div>
             </form>
