@@ -1231,9 +1231,6 @@ export default function LoanDetail() {
               )}
 
               <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn" onClick={handleCloseReceiptModal}>
-                  Cancelar
-                </button>
                 <button type="submit" className="btn btn-primary">
                   Guardar
                 </button>
