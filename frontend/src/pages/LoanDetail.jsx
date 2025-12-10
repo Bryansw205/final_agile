@@ -1154,7 +1154,7 @@ export default function LoanDetail() {
 
       {/* Modal de configuración de comprobante (después de pagar) */}
       {showReceiptConfig && receiptPayment && (
-        <div className="modal-overlay" onClick={handleCloseReceiptModal}>
+        <div className="modal-overlay">
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0 }}>Configurar Comprobante</h3>
 
