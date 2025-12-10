@@ -168,3 +168,35 @@ export function getFlowStatusText(status) {
   };
   return statuses[status] || 'Desconocido';
 }
+
+/**
+ * Mapea el método de pago de Flow a los métodos de la BD
+ * Flow devuelve valores como: "YAPE", "PLIN", "Transferencia Bancaria", "Tarjeta de Crédito", "Tarjeta de Débito", etc.
+ * @param {string} flowPaymentMethod - Método de Flow
+ * @returns {string} Método de BD compatible
+ */
+export function mapFlowPaymentMethod(flowPaymentMethod) {
+  if (!flowPaymentMethod) return 'FLOW';
+  
+  const method = (flowPaymentMethod || '').toUpperCase().trim();
+  
+  // Mapeo directo
+  if (method === 'YAPE') return 'YAPE';
+  if (method === 'PLIN') return 'PLIN';
+  
+  // Billetera digital
+  if (method.includes('BILLETERA') || method.includes('WALLET')) return 'BILLETERA_DIGITAL';
+  
+  // Tarjeta de débito
+  if (method.includes('DÉBITO') || method.includes('DEBITO') || method.includes('DEBIT')) return 'TARJETA_DEBITO';
+  
+  // Tarjeta de crédito (mapear a tarjeta)
+  if (method.includes('CRÉDITO') || method.includes('CREDITO') || method.includes('CREDIT')) return 'TARJETA';
+  
+  // Transferencia bancaria
+  if (method.includes('TRANSFERENCIA') || method.includes('TRANSFER')) return 'FLOW';
+  
+  // Si no coincide con nada, retornar FLOW como default
+  return 'FLOW';
+}
+

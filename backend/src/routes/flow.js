@@ -6,6 +6,7 @@ import {
   createFlowPayment,
   getFlowPaymentStatus,
   getFlowStatusText,
+  mapFlowPaymentMethod,
 } from '../services/flowService.js';
 import { registerPayment } from '../services/payment.js';
 import { PrismaClient } from '@prisma/client';
@@ -166,11 +167,15 @@ router.get(
           if (!existingPayment) {
             console.log('📦 Registrando pago nuevo...');
             
+            // Obtener el método de pago real desde Flow
+            const realPaymentMethod = mapFlowPaymentMethod(status.paymentMethod);
+            console.log('💳 Método de pago mapeado: Flow:', status.paymentMethod, '-> BD:', realPaymentMethod);
+            
             // Registrar el pago en el sistema
             const payment = await registerPayment({
               loanId,
               amount: status.amount,
-              paymentMethod: 'FLOW',
+              paymentMethod: realPaymentMethod,
               registeredByUserId,
               cashSessionId,
               installmentId,
@@ -180,6 +185,7 @@ router.get(
             console.log(`✅ Pago Flow registrado:`, {
               paymentId: payment.id,
               flowOrder: status.flowOrder,
+              paymentMethod: realPaymentMethod,
               installmentId,
             });
           } else {
@@ -315,32 +321,27 @@ router.post(
           });
 
           if (!existingPayment) {
-            console.log('📦 Registrando pago desde webhook...');
+            console.log('📦 Registrando pago nuevo...');
             
-            if (!cashSessionId) {
-              console.error('❌ No hay sesión de caja abierta asociada para registrar el pago de Flow');
-              return res.status(200).send('OK');
-            }
-
-            if (!userId) {
-              console.error('❌ No se pudo identificar al usuario que inició el pago en Flow');
-              return res.status(200).send('OK');
-            }
+            // Obtener el método de pago real desde Flow
+            const realPaymentMethod = mapFlowPaymentMethod(paymentStatus.paymentMethod);
+            console.log('💳 Método de pago mapeado: Flow:', paymentStatus.paymentMethod, '-> BD:', realPaymentMethod);
             
             // Registrar el pago en el sistema
             const payment = await registerPayment({
               loanId,
               amount: paymentStatus.amount,
-              paymentMethod: 'FLOW',
+              paymentMethod: realPaymentMethod,
               registeredByUserId: userId,
               cashSessionId,
               installmentId,
               externalReference: paymentStatus.flowOrder.toString(),
             });
 
-            console.log(`✅ Pago Flow registrado desde webhook:`, {
+            console.log(`✅ Pago Flow registrado:`, {
               paymentId: payment.id,
               flowOrder: paymentStatus.flowOrder,
+              paymentMethod: realPaymentMethod,
               installmentId,
             });
           } else {
