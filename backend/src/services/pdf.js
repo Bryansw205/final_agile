@@ -223,7 +223,13 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   const total = Number(payment.amount || 0);
   const opGravada = round2(total / 1.18);
   const igv = round2(total - opGravada);
-  const number = String(payment.receiptNumber || '').padStart(8, '0');
+  
+  // Serie y correlativo para comprobante electrónico
+  // Serie: F001 (Factura) o B001 (Boleta)
+  // Correlativo: número secuencial basado en el ID del pago, formateado a 8 dígitos
+  const series = type === 'factura' ? 'F001' : 'B001';
+  const correlative = String(payment.id || 0).padStart(8, '0');
+  const comprobanteFull = `${series}-${correlative}`;
 
   const margin = doc.page.margins.left;
 
@@ -252,7 +258,7 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
   doc.font('Helvetica-Bold').fontSize(10);
   doc.text(`R.U.C. N° ${issuer.ruc}`, boxX, boxY + 8, { width: boxW, align: 'center' });
   doc.text(`${type.toUpperCase()} ELECTRÓNICA`, boxX, boxY + 28, { width: boxW, align: 'center' });
-  doc.text(`${issuer.series}-${number}`, boxX, boxY + 48, { width: boxW, align: 'center' });
+  doc.text(`${comprobanteFull}`, boxX, boxY + 48, { width: boxW, align: 'center' });
 
   y = boxY + boxH + 16;
 
