@@ -846,9 +846,9 @@ export async function registerPayment({
       }
     }
 
-    // 3. Marcar la cuota como pagada si se pagó el monto completo
+    // 3. Solo verificar estado de la cuota (se marca como pagada al guardar el comprobante)
     if (installmentId) {
-      console.log('🔍 Verificando si marcar cuota como pagada:', { installmentId });
+      console.log('?? Verificando estado de cuota:', { installmentId });
       
       const installment = await tx.paymentSchedule.findUnique({
         where: { id: installmentId },
@@ -856,7 +856,6 @@ export async function registerPayment({
 
       if (installment) {
         const installmentAmount = Number(installment.installmentAmount);
-        // Obtener TODOS los pagos para esta cuota (INCLUYENDO el que acaba de crearse)
         const allPaymentsForInstallment = await tx.payment.findMany({
           where: { installmentId },
         });
@@ -870,13 +869,13 @@ export async function registerPayment({
         );
         const shouldMarkAsPaid = outstandingAmount <= OUTSTANDING_TOLERANCE;
 
-        console.log('📊 Pagos encontrados para cuota:', {
+        console.log('?? Pagos encontrados para cuota:', {
           installmentId,
           totalPaid,
           paymentCount: allPaymentsForInstallment.length
         });
 
-        console.log('💰 Comparación de montos:', {
+        console.log('?? Comparaci?n de montos:', {
           installmentId,
           installmentAmount,
           outstandingInstallment,
@@ -886,15 +885,11 @@ export async function registerPayment({
           outstandingTolerance: OUTSTANDING_TOLERANCE,
           shouldMarkAsPaid,
         });
-
       } else {
-          console.log('⏳ Cuota aún no completamente pagada');
-        }
-      } else {
-        console.log('❌ No se encontró la cuota con id:', installmentId);
+        console.log('?? No se encontr? la cuota con id:', installmentId);
       }
     } else {
-      console.log('⚠️ No se proporcionó installmentId');
+      console.log('?? No se proporcion? installmentId');
     }
 
     return newPayment;
