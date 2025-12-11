@@ -450,6 +450,19 @@ router.post(
         externalReference,
       });
 
+      // Obtener todos los payment IDs creados por este adelanto
+      // Buscar pagos creados recientemente para este préstamo (últimos 5 segundos)
+      const advancePayments = await prisma.payment.findMany({
+        where: {
+          loanId: Number(loanId),
+          createdAt: {
+            gte: new Date(Date.now() - 5000), // Últimos 5 segundos
+          },
+        },
+        select: { id: true },
+      });
+      const paymentIds = advancePayments.map(p => p.id);
+
       res.status(201).json({
         success: true,
         payment: {
@@ -463,12 +476,58 @@ router.post(
           lateFeePaid: Number(payment.lateFeePaid),
           roundingAdjustment: Number(payment.roundingAdjustment),
           installmentsPaid: payment.installmentsPaid || [],
+          paymentIds: paymentIds,
           loan: {
             id: payment.loan.id,
             client: payment.loan.client,
           },
         },
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /payments/advance/receipt-config
+ * Actualiza el tipo de comprobante para múltiples pagos del adelanto
+ */
+router.post(
+  '/advance/receipt-config',
+  requireAuth,
+  body('paymentIds').isArray({ min: 1 }),
+  body('paymentIds.*').isInt({ gt: 0 }),
+  body('receiptType').isIn(['BOLETA', 'FACTURA']),
+  body('invoiceRuc').optional({ checkFalsy: true }).matches(/^[0-9]{11}$/),
+  body('invoiceBusinessName').optional().isString(),
+  body('invoiceAddress').optional().isString(),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { paymentIds, receiptType, invoiceRuc, invoiceBusinessName, invoiceAddress } = req.body;
+
+      // Actualizar todos los pagos con la información del comprobante
+      const updateData = { receiptType };
+      if (receiptType === 'FACTURA') {
+        updateData.invoiceRuc = invoiceRuc || null;
+        updateData.invoiceBusinessName = invoiceBusinessName || null;
+        updateData.invoiceAddress = invoiceAddress || null;
+      } else {
+        // Si es BOLETA, limpiar datos de invoice
+        updateData.invoiceRuc = null;
+        updateData.invoiceBusinessName = null;
+        updateData.invoiceAddress = null;
+      }
+
+      await prisma.payment.updateMany({
+        where: {
+          id: { in: paymentIds },
+        },
+        data: updateData,
+      });
+
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }

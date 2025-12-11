@@ -535,12 +535,26 @@ export default function LoanDetail() {
 
     try {
       setError('');
-      await apiPost(`/payments/${receiptPayment.id}/receipt-info`, {
-        receiptType,
-        invoiceRuc: invoiceRuc || null,
-        invoiceBusinessName: invoiceName || null,
-        invoiceAddress: invoiceAddress || null,
-      });
+      
+      // Si es un adelanto (tiene paymentIds), actualizar múltiples pagos
+      if (receiptPayment.paymentIds && receiptPayment.paymentIds.length > 0) {
+        await apiPost('/payments/advance/receipt-config', {
+          paymentIds: receiptPayment.paymentIds,
+          receiptType,
+          invoiceRuc: invoiceRuc || null,
+          invoiceBusinessName: invoiceName || null,
+          invoiceAddress: invoiceAddress || null,
+        });
+      } else {
+        // Si es un pago individual, actualizar solo ese pago
+        await apiPost(`/payments/${receiptPayment.id}/receipt-info`, {
+          receiptType,
+          invoiceRuc: invoiceRuc || null,
+          invoiceBusinessName: invoiceName || null,
+          invoiceAddress: invoiceAddress || null,
+        });
+      }
+      
       setSuccess('Comprobante guardado');
       handleCloseReceiptModal();
       await load();
