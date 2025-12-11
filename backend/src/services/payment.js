@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
+import { validateChangeAvailable, addCashMovement } from './cashService.js';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -815,6 +816,16 @@ export async function registerPayment({
     throw new Error('El monto mínimo para billetera digital o tarjeta débito es S/ 2.00');
   }
 
+  // VALIDAR VUELTO: Si hay cambio, verificar que haya efectivo suficiente en caja
+  if (paymentMethod === 'EFECTIVO' && change && Number(change) > 0) {
+    const changeValidation = await validateChangeAvailable(cashSessionId, Number(change));
+    if (!changeValidation.available) {
+      throw new Error(
+        `No hay suficiente efectivo en caja para dar vuelto. Vuelto requerido: S/ ${Number(change).toFixed(2)}, Efectivo disponible: S/ ${changeValidation.currentBalance.toFixed(2)}`
+      );
+    }
+  }
+
   // Distribuir el pago: primero mora, luego interés, luego capital
   let remaining = paymentAmount;
   let lateFeePaid = 0;
@@ -990,6 +1001,20 @@ export async function registerPayment({
       }
     } else {
       console.log('?? No se proporcion? installmentId');
+    }
+
+    // 4. Registrar el vuelto como movimiento de caja si existe
+    if (paymentMethod === 'EFECTIVO' && change && Number(change) > 0) {
+      await tx.cashMovement.create({
+        data: {
+          cashSessionId,
+          movementType: 'VUELTO',
+          amount: Number(change),
+          description: `Vuelto entregado - Pago #${newPayment.receiptNumber}`,
+          relatedPaymentId: newPayment.id,
+        },
+      });
+      console.log('💰 Vuelto registrado como movimiento de caja:', { paymentId: newPayment.id, change });
     }
 
     return newPayment;

@@ -8,6 +8,9 @@ export default function Payments() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [history, setHistory] = useState([]);
+  const [showAddCashModal, setShowAddCashModal] = useState(false);
+  const [addCashAmount, setAddCashAmount] = useState('');
+  const [addCashDescription, setAddCashDescription] = useState('');
 
   useEffect(() => {
     loadCurrentSession();
@@ -76,6 +79,32 @@ export default function Payments() {
       setTimeout(() => {
         apiDownload(`/cash-sessions/${cashSession.id}/report`, `cierre-caja-${cashSession.id}.pdf`);
       }, 500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAddCash(e) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    try {
+      setLoading(true);
+      const data = await apiPost(`/cash-sessions/${cashSession.id}/add-cash`, {
+        amount: parseFloat(addCashAmount),
+        description: addCashDescription || 'Ingreso de dinero a caja',
+      });
+
+      setSuccess(`✅ Se agregaron S/ ${parseFloat(addCashAmount).toFixed(2)} a la caja`);
+      setAddCashAmount('');
+      setAddCashDescription('');
+      setShowAddCashModal(false);
+      
+      // Recargar sesión
+      loadCurrentSession();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -175,9 +204,17 @@ export default function Payments() {
             <button 
               onClick={handleCloseSession} 
               disabled={loading}
-              style={{ marginTop: '1rem', backgroundColor: '#dc3545' }}
+              style={{ marginTop: '1rem', backgroundColor: '#dc3545', marginRight: '0.5rem' }}
             >
               {loading ? 'Cerrando...' : 'Cerrar Caja'}
+            </button>
+
+            <button 
+              onClick={() => setShowAddCashModal(true)} 
+              disabled={loading}
+              style={{ marginTop: '1rem', backgroundColor: '#28a745' }}
+            >
+              💰 Agregar Dinero a Caja
             </button>
           </div>
 
@@ -359,6 +396,90 @@ export default function Payments() {
           </table>
         </div>
       )}
+
+      {/* Modal para agregar dinero */}
+      {showAddCashModal && (
+        <div className="modal-overlay" onClick={() => setShowAddCashModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>Agregar Dinero a Caja</h2>
+            <form onSubmit={handleAddCash}>
+              <div className="form-group">
+                <label htmlFor="addCashAmount">Monto (S/)</label>
+                <input
+                  type="number"
+                  id="addCashAmount"
+                  value={addCashAmount}
+                  onChange={(e) => setAddCashAmount(e.target.value)}
+                  step="0.01"
+                  min="0"
+                  required
+                  disabled={loading}
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="addCashDescription">Descripción (opcional)</label>
+                <input
+                  type="text"
+                  id="addCashDescription"
+                  value={addCashDescription}
+                  onChange={(e) => setAddCashDescription(e.target.value)}
+                  placeholder="Ej: Ingreso del dueño"
+                  disabled={loading}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button"
+                  onClick={() => setShowAddCashModal(false)}
+                  disabled={loading}
+                  style={{ backgroundColor: '#6c757d' }}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  style={{ backgroundColor: '#28a745' }}
+                >
+                  {loading ? 'Procesando...' : '✅ Agregar Dinero'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .modal-content {
+          background: white;
+          border-radius: 8px;
+          padding: 2rem;
+          max-width: 400px;
+          width: 90%;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-content h2 {
+          margin-top: 0;
+          margin-bottom: 1.5rem;
+        }
+      `}</style>
     </div>
   );
 }
