@@ -277,9 +277,7 @@ function buildInvoicePdf(doc, payment, invoiceInfo = {}) {
   doc.font('Helvetica-Bold').fontSize(9);
   doc.text('Tipo de Moneda: SOLES', margin, y);
   y += 11;
-  doc.text('Forma de Pago: CONTADO', margin, y);
-  y += 11;
-  doc.text('Tipo de Operación: VENTA INTERNA', margin, y);
+  doc.text('Forma de Pago: CRÉDITO', margin, y);
   y += 18;
 
   // Tabla de items
@@ -494,9 +492,7 @@ function buildBoleta(doc, payment, invoiceInfo = {}) {
   y += 14;
   doc.font('Helvetica-Bold').text('MONEDA:', margin, y, { continued: true }).font('Helvetica').text(' SOL (PEN)');
   y += 14;
-  doc.font('Helvetica-Bold').text('FORMA DE PAGO:', margin, y, { continued: true }).font('Helvetica').text(' CONTADO');
-  y += 14;
-  doc.font('Helvetica-Bold').text('TIPO DE OPERACIÓN:', margin, y, { continued: true }).font('Helvetica').text(' VENTA INTERNA');
+  doc.font('Helvetica-Bold').text('FORMA DE PAGO:', margin, y, { continued: true }).font('Helvetica').text(' CRÉDITO');
   y += 18;
 
   // Encabezado tabla
@@ -676,9 +672,7 @@ export function buildPaymentReceiptOld(doc, payment, invoiceInfo = {}) {
   y += 14;
   doc.font('Helvetica-Bold').text('MONEDA:', margin, y, { continued: true }).font('Helvetica').text(' SOL (PEN)');
   y += 14;
-  doc.font('Helvetica-Bold').text('FORMA DE PAGO:', margin, y, { continued: true }).font('Helvetica').text(' CONTADO');
-  y += 14;
-  doc.font('Helvetica-Bold').text('TIPO DE OPERACIÓN:', margin, y, { continued: true }).font('Helvetica').text(' VENTA INTERNA');
+  doc.font('Helvetica-Bold').text('FORMA DE PAGO:', margin, y, { continued: true }).font('Helvetica').text(' CRÉDITO');
   y += 18;
 
   // Encabezado tabla
