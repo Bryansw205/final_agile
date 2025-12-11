@@ -390,7 +390,9 @@ export async function registerAdvancePayment({
     if (cashChange > 0) {
       const validation = await validateChangeAvailable(Number(cashSessionId), cashChange);
       if (!validation.available) {
-        throw new Error(No hay efectivo suficiente en caja para dar vuelto. Disponible: S/ );
+        throw new Error(
+          `No hay efectivo suficiente en caja para dar vuelto. Disponible: S/ ${validation.currentBalance.toFixed(2)}`
+        );
       }
     }
   }
