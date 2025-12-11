@@ -1051,7 +1051,7 @@ export async function registerPayment({
       cashSessionId: Number(cashSessionId),
       movementType: 'RECAUDACION',
       amount: paymentAmount,
-      description: Pago pr??stamo #,
+      description: `Pago préstamo #${loanId}`,
       relatedPaymentId: payment.id,
     });
 
@@ -1060,7 +1060,7 @@ export async function registerPayment({
         cashSessionId: Number(cashSessionId),
         movementType: 'VUELTO',
         amount: cashChange,
-        description: Vuelto pago #,
+        description: `Vuelto pago #${payment.id}`,
         relatedPaymentId: payment.id,
       });
     }
