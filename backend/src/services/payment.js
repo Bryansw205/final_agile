@@ -845,7 +845,7 @@ export async function registerPayment({
     installmentPendingLateFee = Number(installmentLateFeeInfo.lateFeeAmount || 0);
   }
 
-  if (paymentAmount > maxAllowed) {
+  if (paymentMethod !== 'EFECTIVO' && paymentAmount > maxAllowed) {
     throw new Error(`El monto del pago supera la deuda pendiente total (máximo S/ ${maxAllowed.toFixed(2)})`);
   }
 
