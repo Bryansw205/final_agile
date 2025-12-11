@@ -56,7 +56,37 @@ export default function Payments() {
     }
   }
 
-  async function handleCloseSession() {
+  
+async function handleAddCash() {
+  if (!cashSession) return;
+  const amountStr = prompt('Monto a ingresar en caja (S/):');
+  if (amountStr === null) return;
+  const amount = Number(amountStr);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    setError('Ingrese un monto v?lido mayor a 0');
+    return;
+  }
+
+  setError('');
+  setSuccess('');
+
+  try {
+    setLoading(true);
+    await apiPost(`/cash-sessions/${cashSession.id}/movements`, {
+      movementType: 'INGRESO',
+      amount,
+      description: 'Ingreso manual a caja',
+    });
+    setSuccess('Efectivo agregado a caja');
+    await loadCurrentSession();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function handleCloseSession() {
     const physicalBalance = prompt('Ingrese el monto físico contado en caja:');
     if (physicalBalance === null) return;
 
@@ -172,13 +202,23 @@ export default function Payments() {
               </div>
             )}
 
-            <button 
-              onClick={handleCloseSession} 
-              disabled={loading}
-              style={{ marginTop: '1rem', backgroundColor: '#dc3545' }}
-            >
-              {loading ? 'Cerrando...' : 'Cerrar Caja'}
-            </button>
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+              <button
+                onClick={handleAddCash}
+                disabled={loading}
+                style={{ backgroundColor: '#198754' }}
+              >
+                {loading ? 'Guardando...' : 'Agregar efectivo a caja'}
+              </button>
+
+              <button
+                onClick={handleCloseSession}
+                disabled={loading}
+                style={{ backgroundColor: '#dc3545' }}
+              >
+                {loading ? 'Cerrando...' : 'Cerrar Caja'}
+              </button>
+            </div>
           </div>
 
           {cashSession.payments && cashSession.payments.length > 0 && (
