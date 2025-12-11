@@ -33,11 +33,8 @@ router.post(
   async (req, res, next) => {
     try {
       const { principal, interestRate, termCount, startDate } = req.body;
-      // Reglas anteriores de monto mÃ­nimo/mÃ¡ximo eliminadas
-      // Regla anterior de tasa mÃ­nima eliminada
-      const start = dayjs.tz(startDate, TZ).startOf('day');
-      const today = dayjs.tz(new Date(), TZ).startOf('day');
-      if (start.isBefore(today)) return res.status(400).json({ error: 'La fecha del prÃ©stamo no puede ser pasada' });
+      // Reglas anteriores de monto mínimo/máximo eliminadas
+      // Regla anterior de tasa mínima eliminada
 
       const schedule = generateSchedule({ principal: Number(principal), interestRate: Number(interestRate), termCount: Number(termCount), startDate });
       const totalInterest = round2(schedule.reduce((a, r) => a + Number(r.interestAmount), 0));
@@ -92,15 +89,11 @@ router.post(
       const { clientId, principal, interestRate, termCount, startDate } = req.body;
       const userId = Number(req.user?.sub || req.user?.id);
       if (!userId) return res.status(401).json({ error: 'Usuario no autenticado' });
-      // ValidaciÃ³n de fecha: no en pasado (solo fecha, no hora)
-      const start = dayjs.tz(startDate, TZ).startOf('day');
-      const today = dayjs.tz(new Date(), TZ).startOf('day');
-      if (start.isBefore(today)) return res.status(400).json({ error: 'La fecha del prÃ©stamo no puede ser pasada' });
-
-      // Reglas anteriores de monto mÃ­nimo/mÃ¡ximo eliminadas
-      // Regla anterior de tasa mÃ­nima eliminada
+      
+      // Reglas anteriores de monto mínimo/máximo eliminadas
+      // Regla anterior de tasa mínima eliminada
       if (Number(principal) >= 5350 && req.body.declarationAccepted !== true) {
-        return res.status(400).json({ error: 'Para montos desde S/ 5,350 debe descargar y aceptar la DeclaraciÃ³n Jurada.' });
+        return res.status(400).json({ error: 'Para montos desde S/ 5,350 debe descargar y aceptar la Declaración Jurada.' });
       }
 
       const client = await prisma.client.findUnique({ where: { id: Number(clientId) } });

@@ -262,8 +262,7 @@ export default function NewLoan() {
                 className="input"
                 type="date"
                 value={startDate}
-                disabled
-                readOnly
+                onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
           </div>
