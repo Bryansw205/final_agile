@@ -15,45 +15,28 @@ function round2(v) {
 }
 
 /**
- * Aplica Redondeo de Banquero (Redondeo al Par Más Cercano)
- * Reglas:
- * - Si saldo < 0.05: redondea a 0 (cuota considerada pagada)
- * - Si saldo >= 0.05: redondea a 0.10
- * - Si dígito anterior a 0.05 es par, redondea hacia abajo
- * - Si es impar, redondea hacia arriba para que resultado sea par
+ * Aplica redondeo a múltiplos de S/ 0.10 según regla de usuario:
+ * - Si la parte decimal > 0.05: redondea hacia arriba al siguiente 0.10
+ * - Si la parte decimal <= 0.05: redondea hacia abajo al 0.10 anterior
+ * Ejemplos:
+ * - 10.66 (0.66 > 0.05) → 10.70
+ * - 10.56 (0.56 > 0.05) → 10.60
+ * - 10.04 (0.04 <= 0.05) → 10.00
+ * - 10.05 (0.05 <= 0.05) → 10.00
  */
 export function applyRounding(amount) {
-  const cents = Math.round((amount % 1) * 100);
-  const integerPart = Math.floor(amount);
+  const num = Number(amount);
   
-  // Si los centavos son menores a 5, redondea hacia abajo (condonar)
-  if (cents < 5) {
-    return integerPart; // Cuota considerada como pagada
+  // Obtener la parte decimal (ej: 150.67 -> 0.67)
+  const decimalPart = num % 1;
+  
+  // Si la parte decimal es > 0.05, redondea hacia arriba al siguiente 0.10
+  if (decimalPart > 0.05) {
+    return Math.ceil(num * 10) / 10;
   }
   
-  // Si los centavos están entre 5-9, redondea hacia arriba a 0.10
-  if (cents >= 5 && cents <= 9) {
-    return integerPart + 0.10; // Redondea hacia arriba a .10
-  }
-  
-  // Para centavos 10-99, aplicar redondeo de banquero
-  const decimalPart = Math.floor(cents / 10) * 10;
-  const remainder = cents % 10;
-  
-  if (remainder < 5) {
-    // Redondea hacia abajo al múltiplo de 10 anterior (redondeo de banquero)
-    return integerPart + (decimalPart / 100);
-  } else if (remainder > 5) {
-    // Redondea hacia arriba
-    return integerPart + ((decimalPart + 10) / 100);
-  } else {
-    // remainder === 5: Redondeo de banquero (al par más cercano)
-    const tenthDigit = Math.floor((decimalPart / 10) % 10);
-    const isEven = tenthDigit % 2 === 0;
-    return isEven 
-      ? integerPart + (decimalPart / 100)  // Mantiene decimal par
-      : integerPart + ((decimalPart + 10) / 100);  // Redondea hacia par
-  }
+  // Si es <= 0.05, redondea hacia abajo al 0.10 anterior
+  return Math.floor(num * 10) / 10;
 }
 
 /**
