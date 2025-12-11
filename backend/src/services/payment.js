@@ -100,7 +100,8 @@ export function calculateInstallmentLateFee(schedule, payments) {
     outstanding = Math.max(0, round2(outstanding - paidTotal));
   };
 
-  // Mora acumulativa: cada mes 1% del saldo vencido, con redondeo mensual
+  // Mora acumulativa compuesta: cada mes se aplica 1% sobre el saldo total actual (cuota + mora acumulada)
+  // Fórmula: Total = Cuota × (1.01)^meses
   while (true) {
     const nextBoundary = cursor.add(1, 'month');
     if (nextBoundary.isAfter(today)) {
@@ -114,10 +115,11 @@ export function calculateInstallmentLateFee(schedule, payments) {
       idx += 1;
     }
 
+    // Si hay saldo pendiente, aplicar 1% de mora sobre el total acumulado (cuota + mora anterior)
     if (outstanding > OUTSTANDING_TOLERANCE) {
-      const lateFeeThisMonth = round2(outstanding * 0.01);
+      const currentTotal = round2(outstanding + accruedLateFee);
+      const lateFeeThisMonth = round2(currentTotal * 0.01);
       accruedLateFee = round2(accruedLateFee + lateFeeThisMonth);
-      outstanding = round2(outstanding + lateFeeThisMonth);
     }
 
     cursor = nextBoundary;

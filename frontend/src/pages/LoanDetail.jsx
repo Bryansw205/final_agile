@@ -955,11 +955,10 @@ export default function LoanDetail() {
                     <td>S/ {parseFloat(row.remainingBalance).toFixed(2)}</td>
                     <td>S/ {pendingTotal.toFixed(2)}</td>
                     <td>
-                      {row.hasLateFee ? (
-                        <span className="badge badge-red">✓</span>
-                      ) : (
-                        <span className="badge badge-gray">✗</span>
-                      )}
+                      {row.lateFeeAmount > 0 
+                        ? `S/ ${Number(row.lateFeeAmount).toFixed(2)}`
+                        : '-'
+                      }
                     </td>
                     <td>
                       {isPaid ? (
