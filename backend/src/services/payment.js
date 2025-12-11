@@ -406,7 +406,8 @@ export async function registerAdvancePayment({
   const payment = await prisma.$transaction(async (tx) => {
     for (let i = 0; i < orderedInstallments.length; i += 1) {
       const installment = orderedInstallments[i];
-      if (remaining <= 0) break;
+      if (remaining <= OUTSTANDING_TOLERANCE) break; // Cambiar condición para evitar dejar decimales
+      
       // Sufijar el numero de recibo cuando hay multiples filas para cumplir la
       // restriccion unica en BD y mantener la relacion con el mismo adelanto.
       const receiptNumber =
@@ -465,6 +466,35 @@ export async function registerAdvancePayment({
         remaining = round2(remaining - toPay);
       }
 
+      // Si es la última cuota y hay remaining pendiente, agregarlo a esta cuota
+      // Se agrega al capital principal (lo más importante)
+      const isLastInstallment = i === orderedInstallments.length - 1;
+      if (isLastInstallment && remaining > OUTSTANDING_TOLERANCE) {
+        // Agregar al principal restante primero
+        if (installmentPrincipalRemaining > 0) {
+          const additionalPrincipal = Math.min(remaining, installmentPrincipalRemaining);
+          installmentPrincipalPaid = round2(installmentPrincipalPaid + additionalPrincipal);
+          paymentForThisInstallment = round2(paymentForThisInstallment + additionalPrincipal);
+          remaining = round2(remaining - additionalPrincipal);
+          installmentPrincipalRemaining = round2(installmentPrincipalRemaining - additionalPrincipal);
+        }
+        // Si aún hay remaining, agregarlo al interés
+        if (remaining > OUTSTANDING_TOLERANCE && installmentInterestRemaining > 0) {
+          const additionalInterest = Math.min(remaining, installmentInterestRemaining);
+          installmentInterestPaid = round2(installmentInterestPaid + additionalInterest);
+          paymentForThisInstallment = round2(paymentForThisInstallment + additionalInterest);
+          remaining = round2(remaining - additionalInterest);
+          installmentInterestRemaining = round2(installmentInterestRemaining - additionalInterest);
+        }
+        // Si aún hay remaining (cosa rara), agregarlo a la mora
+        if (remaining > OUTSTANDING_TOLERANCE && installmentLateFeePending > 0) {
+          const additionalLateFee = Math.min(remaining, installmentLateFeePending);
+          installmentLateFeePaid = round2(installmentLateFeePaid + additionalLateFee);
+          paymentForThisInstallment = round2(paymentForThisInstallment + additionalLateFee);
+          remaining = round2(remaining - additionalLateFee);
+        }
+      }
+
       if (paymentForThisInstallment > 0) {
         const newPayment = await tx.payment.create({
           data: {
@@ -506,6 +536,25 @@ export async function registerAdvancePayment({
             }
           }
         }
+      }
+    }
+
+    // Después de registrar todos los pagos, marcar las cuotas como pagadas si corresponde
+    for (const installment of orderedInstallments) {
+      const paymentsForInstallment = await tx.payment.findMany({
+        where: { installmentId: installment.id },
+      });
+
+      // Calcular el total pendiente de esta cuota
+      const lateFeeInfo = calculateInstallmentLateFee(installment, paymentsForInstallment);
+      
+      // Si no hay nada pendiente, marcar como pagada
+      if (lateFeeInfo.remainingInstallment <= OUTSTANDING_TOLERANCE && 
+          lateFeeInfo.lateFeeAmount <= OUTSTANDING_TOLERANCE) {
+        await tx.paymentSchedule.update({
+          where: { id: installment.id },
+          data: { isPaid: true, remainingBalance: 0 },
+        });
       }
     }
 
