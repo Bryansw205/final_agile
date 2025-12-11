@@ -101,26 +101,20 @@ export function calculateInstallmentLateFee(schedule, payments) {
     outstanding = Math.max(0, round2(outstanding - paidTotal));
   };
 
-  // Mora acumulativa compuesta: cada 30 días se aplica 1% sobre el total acumulado
-  // La mora comienza desde el día 1 de atraso, se acumula cada 30 días
+  // Mora acumulativa compuesta: se aplica inmediatamente al pasar la fecha de vencimiento,
+  // luego cada 30 días se aplica 1% adicional sobre el total acumulado
   let cursor = dueDate.clone();
   let idx = 0;
   
-  // Aplicar mora inicial (desde el día 1 de atraso hasta el primer período de 30 días)
-  // La mora se aplica como: mora_diaria = 1% / 30 días
-  const daysLate = today.diff(dueDate, 'days');
-  
-  if (daysLate > 0 && outstanding > OUTSTANDING_TOLERANCE) {
-    // Calcular mora proporcional al número de días
-    // Si hace 7 días está vencida: mora = (7/30) * 1% = 0.00233...
-    // Pero para simplificar, aplicamos 1% completo si ya pasó al menos 1 día
+  // PRIMERA MORA: Se aplica inmediatamente al pasar la fecha de vencimiento
+  if (outstanding > OUTSTANDING_TOLERANCE) {
+    // Primera aplicación de mora (día 1 de atraso)
     const currentTotal = round2(outstanding + accruedLateFee);
-    const dailyMoraRate = 0.01 / 30; // 1% dividido entre 30 días
-    const moraForDaysLate = round2(currentTotal * dailyMoraRate * Math.min(daysLate, 30));
-    accruedLateFee = round2(accruedLateFee + moraForDaysLate);
+    const lateFeeDay1 = round2(currentTotal * 0.01);
+    accruedLateFee = round2(accruedLateFee + lateFeeDay1);
   }
   
-  // Ahora aplicar mora por períodos completos de 30 días
+  // MORA ADICIONAL: Cada 30 días posteriores se aplica 1% más
   while (true) {
     const nextBoundary = cursor.clone().add(30, 'days');
     
