@@ -55,6 +55,19 @@ export async function apiDownload(path, filename) {
   window.URL.revokeObjectURL(url);
 }
 
+/**
+ * Descarga comprobante (intenta multi-página para adelantados primero)
+ */
+export async function apiDownloadReceipt(paymentId, filename) {
+  try {
+    // Intentar descargar versión multi-página (para pagos adelantados)
+    await apiDownload(`/payments/${paymentId}/receipt-multi`, filename);
+  } catch (error) {
+    // Si falla, descargar versión simple
+    await apiDownload(`/payments/${paymentId}/receipt`, filename);
+  }
+}
+
 export function apiFileUrl(path) {
   return `${API_URL}${path}`;
 }

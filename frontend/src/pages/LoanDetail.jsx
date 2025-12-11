@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { apiGet, apiPost, apiDownload, apiFileUrl } from '../lib/api.js';
+import { apiGet, apiPost, apiDownload, apiDownloadReceipt, apiFileUrl } from '../lib/api.js';
 import { formatDate } from '../lib/date.js';
 
 /**
@@ -1023,7 +1023,7 @@ export default function LoanDetail() {
                   <td>S/ {payment.lateFeePaid.toFixed(2)}</td>
                   <td>{payment.receiptNumber}</td>
                   <td>
-                    <button className="btn btn-sm" onClick={() => apiDownload(`/payments/${payment.id}/receipt`, `comprobante-${payment.receiptNumber}.pdf`)}>
+                    <button className="btn btn-sm" onClick={() => apiDownloadReceipt(payment.id, `comprobante-${payment.receiptNumber}.pdf`)}>
                       Ver
                     </button>
                   </td>

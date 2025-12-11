@@ -536,4 +536,122 @@ router.post(
   }
 );
 
+/**
+ * GET /payments/:id/receipt-multi
+ * Descarga múltiples boletas para pagos adelantados (una por cuota)
+ */
+router.get(
+  '/:id/receipt-multi',
+  requireAuth,
+  param('id').isInt({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { PrismaClient } = await import('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      const mainPayment = await prisma.payment.findUnique({
+        where: { id: Number(req.params.id) },
+        include: {
+          loan: {
+            include: {
+              client: true,
+              schedules: { orderBy: { installmentNumber: 'asc' } },
+            },
+          },
+          registeredBy: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
+        },
+      });
+
+      if (!mainPayment) {
+        return res.status(404).json({ error: 'Pago no encontrado' });
+      }
+
+      // Buscar todos los pagos relacionados al mismo adelantado
+      // Los pagos adelantados comparten: mismo loanId, createdAt cercano, mismo registeredByUserId
+      const timeWindow = 60000; // 60 segundos
+      const relatedPayments = await prisma.payment.findMany({
+        where: {
+          loanId: mainPayment.loanId,
+          registeredByUserId: mainPayment.registeredByUserId,
+          createdAt: {
+            gte: new Date(new Date(mainPayment.createdAt).getTime() - timeWindow),
+            lte: new Date(new Date(mainPayment.createdAt).getTime() + timeWindow),
+          },
+          receiptType: { not: null },
+          installmentId: { not: null }, // Solo pagos con cuotas específicas
+        },
+        include: {
+          installment: true,
+          loan: {
+            include: {
+              client: true,
+              schedules: { orderBy: { installmentNumber: 'asc' } },
+            },
+          },
+          registeredBy: {
+            select: {
+              id: true,
+              username: true,
+            },
+          },
+        },
+        orderBy: { installment: { installmentNumber: 'asc' } },
+      });
+
+      // Si no hay múltiples pagos, devolver error
+      if (relatedPayments.length <= 1) {
+        return res.status(400).json({ error: 'Este pago no es un adelanto múltiple' });
+      }
+
+      // Crear un PDF multi-página
+      const { createPdfDocument } = await import('../services/pdf.js');
+      const { buildPaymentReceipt } = await import('../services/pdf.js');
+
+      const doc = createPdfDocument();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=boletas-adelanto-${mainPayment.receiptNumber}.pdf`);
+      
+      doc.pipe(res);
+
+      // Generar una página por cada pago
+      for (let i = 0; i < relatedPayments.length; i++) {
+        const payment = relatedPayments[i];
+        const type = (payment.receiptType || 'BOLETA').toLowerCase();
+        
+        const paymentCount = await prisma.payment.count({
+          where: {
+            receiptType: payment.receiptType || 'BOLETA',
+            id: { lte: payment.id },
+          },
+        });
+        
+        const invoiceInfo = {
+          type,
+          correlative: paymentCount,
+          customerRuc: payment.invoiceRuc || '',
+          customerName: payment.invoiceBusinessName || '',
+          customerAddress: payment.invoiceAddress || '',
+        };
+
+        buildPaymentReceipt(doc, payment, invoiceInfo);
+        
+        // Agregar página nueva si no es la última
+        if (i < relatedPayments.length - 1) {
+          doc.addPage();
+        }
+      }
+
+      doc.end();
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;
