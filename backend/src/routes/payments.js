@@ -27,10 +27,12 @@ router.post(
   body('cashSessionId').isInt({ gt: 0 }),
   body('installmentId').optional().isInt({ gt: 0 }),
   body('externalReference').optional().isString(),
+  body('amountGiven').optional().isFloat({ gt: 0 }),
+  body('change').optional().isFloat({ min: 0 }),
   handleValidation,
   async (req, res, next) => {
     try {
-      const { loanId, amount, paymentMethod, cashSessionId, installmentId, externalReference } = req.body;
+      const { loanId, amount, paymentMethod, cashSessionId, installmentId, externalReference, amountGiven, change } = req.body;
       const registeredByUserId = req.user.id;
 
       // Validación: Si es pago FLOW, externalReference es requerido
@@ -60,6 +62,8 @@ router.post(
         cashSessionId: Number(cashSessionId),
         installmentId: installmentId ? Number(installmentId) : null,
         externalReference,
+        amountGiven: amountGiven ? Number(amountGiven) : null,
+        change: change !== undefined ? Number(change) : null,
       });
 
       res.status(201).json({

@@ -191,6 +191,8 @@ export default function Payments() {
                     <th>Cliente</th>
                     <th>Método</th>
                     <th>Monto</th>
+                    <th>Monto Dado</th>
+                    <th>Vuelto</th>
                     <th>Recibo</th>
                   </tr>
                 </thead>
@@ -201,6 +203,8 @@ export default function Payments() {
                       <td>{payment.loan.client.firstName} {payment.loan.client.lastName}</td>
                       <td>{getPaymentMethodLabel(payment.paymentMethod)}</td>
                       <td>S/ {payment.amount.toFixed(2)}</td>
+                      <td>{payment.amountGiven ? `S/ ${Number(payment.amountGiven).toFixed(2)}` : '-'}</td>
+                      <td>{payment.change !== null && payment.change !== undefined ? `S/ ${Number(payment.change).toFixed(2)}` : '-'}</td>
                       <td>{payment.receiptNumber}</td>
                     </tr>
                   ))}

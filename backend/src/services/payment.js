@@ -610,6 +610,8 @@ export async function registerPayment({
   externalReference,
   installmentId, // ID de la cuota específica a pagar
   receiptType = null, // Tipo de comprobante (BOLETA o FACTURA)
+  amountGiven = null, // Monto que dio el cliente (para efectivo)
+  change = null, // Vuelto entregado
 }) {
   console.log('📝 registerPayment llamado con:', {
     loanId,
@@ -618,6 +620,8 @@ export async function registerPayment({
     registeredByUserId,
     cashSessionId,
     installmentId,
+    amountGiven,
+    change,
     externalReference,
     receiptType
   });
@@ -895,6 +899,8 @@ export async function registerPayment({
         installmentId, // Asociar con la cuota específica
         registeredByUserId,
         amount: paymentAmount,
+        amountGiven: amountGiven || null,
+        change: change || null,
         paymentMethod,
         principalPaid,
         interestPaid,

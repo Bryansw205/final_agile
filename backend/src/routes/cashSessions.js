@@ -10,6 +10,13 @@ import {
   getCashSessionDetail,
   getDailyCashReport,
 } from '../services/cashSession.js';
+import {
+  getCashSessionBalance,
+  validateChangeAvailable,
+  addCashMovement,
+  getCashMovements,
+  getCashSessionSummary,
+} from '../services/cashService.js';
 import { buildCashSessionReport, createPdfDocument } from '../services/pdf.js';
 
 const router = Router();
@@ -261,6 +268,144 @@ router.get(
             roundingAdjustment: Number(p.roundingAdjustment),
           })),
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /cash-sessions/:sessionId/balance
+ * Obtiene el saldo actual de efectivo en caja
+ */
+router.get(
+  '/:sessionId/balance',
+  requireAuth,
+  param('sessionId').isInt({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      const balance = await getCashSessionBalance(Number(sessionId));
+
+      res.json({
+        success: true,
+        ...balance,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /cash-sessions/:sessionId/movements
+ * Registra un movimiento de caja (ingreso de efectivo)
+ */
+router.post(
+  '/:sessionId/movements',
+  requireAuth,
+  param('sessionId').isInt({ gt: 0 }),
+  body('movementType').isIn(['INGRESO', 'EGRESO', 'VUELTO', 'RECAUDACION']),
+  body('amount').isFloat({ gt: 0 }),
+  body('description').optional().isString(),
+  body('relatedPaymentId').optional().isInt({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      const { movementType, amount, description, relatedPaymentId } = req.body;
+
+      const movement = await addCashMovement({
+        cashSessionId: Number(sessionId),
+        movementType,
+        amount: Number(amount),
+        description,
+        relatedPaymentId: relatedPaymentId ? Number(relatedPaymentId) : null,
+      });
+
+      res.status(201).json({
+        success: true,
+        movement,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /cash-sessions/:sessionId/movements
+ * Obtiene todos los movimientos de una sesión de caja
+ */
+router.get(
+  '/:sessionId/movements',
+  requireAuth,
+  param('sessionId').isInt({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      const movements = await getCashMovements(Number(sessionId));
+
+      res.json({
+        success: true,
+        movements,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /cash-sessions/:sessionId/summary
+ * Obtiene el resumen de una sesión de caja para cierre
+ */
+router.get(
+  '/:sessionId/summary',
+  requireAuth,
+  param('sessionId').isInt({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      const summary = await getCashSessionSummary(Number(sessionId));
+
+      res.json({
+        success: true,
+        ...summary,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /cash-sessions/:sessionId/validate-change
+ * Valida si hay suficiente efectivo para dar vuelto
+ */
+router.post(
+  '/:sessionId/validate-change',
+  requireAuth,
+  param('sessionId').isInt({ gt: 0 }),
+  body('changeAmount').isFloat({ gt: 0 }),
+  handleValidation,
+  async (req, res, next) => {
+    try {
+      const { sessionId } = req.params;
+      const { changeAmount } = req.body;
+
+      const validation = await validateChangeAvailable(
+        Number(sessionId),
+        Number(changeAmount)
+      );
+
+      res.json({
+        success: true,
+        ...validation,
       });
     } catch (error) {
       next(error);

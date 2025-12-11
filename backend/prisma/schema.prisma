@@ -89,6 +89,8 @@ model Payment {
   registeredByUserId Int
   registeredBy     User          @relation("RegisteredBy", fields: [registeredByUserId], references: [id])
   amount           Decimal       @db.Decimal(18, 2)
+  amountGiven      Decimal?      @db.Decimal(18, 2) // Monto que dio el cliente (para efectivo)
+  change           Decimal?      @db.Decimal(18, 2) // Vuelto entregado
   paymentMethod    PaymentMethod
   paymentDate      DateTime      @default(now())
   principalPaid    Decimal       @db.Decimal(18, 2)
@@ -138,7 +140,29 @@ model CashSession {
   closedAt        DateTime?
   isClosed        Boolean  @default(false)
   payments        Payment[]
+  movements       CashMovement[]
 
   @@index([userId])
   @@index([openedAt])
+}
+
+enum CashMovementType {
+  INGRESO      // Entrada de efectivo (del dueño)
+  EGRESO       // Salida de efectivo
+  VUELTO       // Vuelto entregado al cliente
+  RECAUDACION  // Pago recibido del cliente
+}
+
+model CashMovement {
+  id              Int      @id @default(autoincrement())
+  cashSessionId   Int
+  cashSession     CashSession @relation(fields: [cashSessionId], references: [id])
+  movementType    CashMovementType
+  amount          Decimal  @db.Decimal(18, 2)
+  description     String?
+  relatedPaymentId Int?    // Referencia al pago si es relacionado
+  createdAt       DateTime @default(now())
+
+  @@index([cashSessionId])
+  @@index([createdAt])
 }

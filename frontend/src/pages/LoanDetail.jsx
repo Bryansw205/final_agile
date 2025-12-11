@@ -63,6 +63,8 @@ export default function LoanDetail() {
   const [paymentStep, setPaymentStep] = useState(1); // 1 = seleccionar método, 2 = detalles y monto
   const [selectedInstallment, setSelectedInstallment] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [amountGiven, setAmountGiven] = useState(''); // Monto que da el cliente en efectivo
+  const [change, setChange] = useState(0); // Vuelto calculado
   const [paymentMethod, setPaymentMethod] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
   const [cashSession, setCashSession] = useState(null);
@@ -479,18 +481,33 @@ export default function LoanDetail() {
     setPaymentStep(1);
     setPaymentMethod('');
     setPaymentAmount('');
+    setAmountGiven('');
+    setChange(0);
   }
 
   function handleClosePaymentModal() {
     setShowPaymentModal(false);
     setSelectedInstallment(null);
     setPaymentAmount('');
+    setAmountGiven('');
+    setChange(0);
     setPaymentMethod('');
     setPaymentStep(1);
   }
 
   function handlePaymentAmountChange(e) {
     setPaymentAmount(e.target.value);
+  }
+
+  function handleAmountGivenChange(e) {
+    const given = parseFloat(e.target.value) || 0;
+    setAmountGiven(e.target.value);
+    // Calcular vuelto = monto dado - total a pagar
+    const totalToPay = paymentMethod === 'EFECTIVO'
+      ? Number(roundCash(Number(displayTotalToPay)).toFixed(2))
+      : Number(displayTotalToPay.toFixed(2));
+    const calculatedChange = Math.max(0, given - totalToPay);
+    setChange(Number(calculatedChange.toFixed(2)));
   }
 
   function handleCloseReceiptModal() {
@@ -568,19 +585,34 @@ export default function LoanDetail() {
     setError('');
     setSuccess('');
 
-    const amount = parseFloat(paymentAmount);
-    if (isNaN(amount) || amount <= 0) {
-      setError('Ingrese un monto válido');
-      return;
-    }
-
-    // Validar que en EFECTIVO el monto sea múltiplo de S/ 0.10
+    // Determinar el monto a usar según el método de pago
+    let finalAmount;
+    let amountToValidate;
+    
     if (paymentMethod === 'EFECTIVO') {
-      const cents = Math.round(amount * 100);
-      if (cents % 10 !== 0) {
-        setError('En efectivo solo se aceptan múltiplos de S/ 0.10');
+      // Para efectivo, usamos amountGiven
+      amountToValidate = parseFloat(amountGiven);
+      if (isNaN(amountToValidate) || amountToValidate <= 0) {
+        setError('Ingrese un monto válido para el monto dado');
         return;
       }
+
+      // Validar que sea múltiplo de 0.10
+      const cents = Math.round(amountToValidate * 100);
+      if (cents % 10 !== 0) {
+        setError('El monto debe ser en múltiplos de S/ 0.10');
+        return;
+      }
+
+      finalAmount = Number(amountToValidate.toFixed(2));
+    } else {
+      // Para pagos digitales, usamos paymentAmount
+      amountToValidate = parseFloat(paymentAmount);
+      if (isNaN(amountToValidate) || amountToValidate <= 0) {
+        setError('Ingrese un monto válido');
+        return;
+      }
+      finalAmount = amountToValidate;
     }
 
     // Validar que todas las cuotas anteriores estén pagadas (cuotas seguidas)
@@ -594,29 +626,36 @@ export default function LoanDetail() {
     const remainingBase = parseFloat(selectedInstallment.remainingInstallment ?? selectedInstallment.installmentAmount) || 0;
     const moraBase = selectedInstallment.lateFeeAmount || 0;
     const totalBase = remainingBase + moraBase;
-    // Monto máximo = total (cuota + mora), redondeado si es EFECTIVO
-    const maxAllowed = paymentMethod === 'EFECTIVO' ? roundCash(totalBase) : totalBase;
-    if (amount > maxAllowed) {
-      setError(`El monto no puede ser mayor a S/ ${maxAllowed.toFixed(2)}`);
-      return;
-    }
+    // El total a pagar
+    const totalToPay = paymentMethod === 'EFECTIVO' 
+      ? Number(roundCash(totalBase).toFixed(2))
+      : Number(totalBase.toFixed(2));
 
-    if (paymentMethod === 'BILLETERA_DIGITAL' && amount < 2) {
-      setError('El monto mínimo para pago digital es S/ 2.00');
-      return;
+    // Para EFECTIVO: el cliente puede dar más (con vuelto) o exacto
+    // Para DIGITAL: debe ser exacto
+    if (paymentMethod === 'EFECTIVO') {
+      // El monto dado debe ser >= al total a pagar
+      if (finalAmount < totalToPay) {
+        setError(`El monto dado (S/ ${finalAmount.toFixed(2)}) debe ser mayor o igual al total a pagar (S/ ${totalToPay.toFixed(2)})`);
+        return;
+      }
+    } else {
+      // Para digitales, validamos el máximo permitido
+      const maxAllowed = totalBase;
+      if (finalAmount > maxAllowed) {
+        setError(`El monto no puede ser mayor a S/ ${maxAllowed.toFixed(2)}`);
+        return;
+      }
+
+      if (paymentMethod === 'BILLETERA_DIGITAL' && finalAmount < 2) {
+        setError('El monto mínimo para pago digital es S/ 2.00');
+        return;
+      }
     }
 
     if (!cashSession) {
       setError('Debe abrir una sesión de caja antes de registrar pagos');
       return;
-    }
-
-    // Aplicar redondeo automático para efectivo
-    const finalAmount = paymentMethod === 'EFECTIVO'
-      ? Number(roundCash(amount).toFixed(2))
-      : amount;
-    if (paymentMethod === 'EFECTIVO') {
-      setPaymentAmount(finalAmount.toFixed(2));
     }
 
     setProcessingPayment(true);
@@ -628,7 +667,7 @@ export default function LoanDetail() {
 
         const flowResponse = await apiPost('/flow/create-payment', {
           loanId: parseInt(id),
-          amount,
+          amount: finalAmount,
           email,
           installmentId: selectedInstallment.id,
         });
@@ -645,12 +684,15 @@ export default function LoanDetail() {
         }, 1000);
       } else {
         // Pago con efectivo
+        // El amount que se registra es el totalToPay (redondeado), no el monto dado
         const paymentPayload = {
           loanId: parseInt(id),
-          amount: finalAmount,
+          amount: totalToPay, // Registramos el total a pagar (no el monto dado)
           paymentMethod,
           cashSessionId: cashSession?.id || null,
           installmentId: selectedInstallment.id,
+          amountGiven: finalAmount, // Guardamos cuánto dio el cliente
+          change: change, // Guardamos el vuelto
         };
 
         console.log('📤 Enviando pago:', paymentPayload);
@@ -1057,6 +1099,8 @@ export default function LoanDetail() {
                 <th>Fecha</th>
                 <th>Monto</th>
                 <th>Método</th>
+                <th>Monto Dado</th>
+                <th>Vuelto</th>
                 <th>Capital</th>
                 <th>Interés</th>
                 <th>Mora</th>
@@ -1070,6 +1114,8 @@ export default function LoanDetail() {
                   <td>{new Date(payment.paymentDate).toLocaleString('es-PE')}</td>
                   <td>S/ {payment.amount.toFixed(2)}</td>
                   <td>{payment.paymentMethod}</td>
+                  <td>{payment.amountGiven ? `S/ ${Number(payment.amountGiven).toFixed(2)}` : '-'}</td>
+                  <td>{payment.change !== null && payment.change !== undefined ? `S/ ${Number(payment.change).toFixed(2)}` : '-'}</td>
                   <td>S/ {payment.principalPaid.toFixed(2)}</td>
                   <td>S/ {payment.interestPaid.toFixed(2)}</td>
                   <td>S/ {payment.lateFeePaid.toFixed(2)}</td>
@@ -1183,24 +1229,61 @@ export default function LoanDetail() {
             </div>
 
             <form onSubmit={handlePayment}>
-              <div className="form-group">
-                <label htmlFor="paymentAmount">Monto a Pagar (S/)</label>
-                <input
-                  type="number"
-                  id="paymentAmount"
-                  value={paymentAmount}
-                  onChange={handlePaymentAmountChange}
-                  step="any"
-                  max={maxPaymentAmount.toFixed(2)}
-                  min="0.01"
-                  required
-                  disabled={processingPayment}
-                />
-                <small>
-                  Máximo: S/ {maxPaymentAmount.toFixed(2)}
-                  {paymentMethod === 'EFECTIVO' && ' (solo múltiplos de S/ 0.10)'}
-                </small>
-              </div>
+              {paymentMethod === 'EFECTIVO' ? (
+                // Formulario para pagos en EFECTIVO
+                <>
+                  <div className="form-group">
+                    <label htmlFor="amountGiven">Monto Dado por el Cliente (S/)</label>
+                    <input
+                      type="number"
+                      id="amountGiven"
+                      value={amountGiven}
+                      onChange={handleAmountGivenChange}
+                      step="0.10"
+                      min="0.10"
+                      required
+                      disabled={processingPayment}
+                      placeholder="Ingrese el monto que da el cliente"
+                    />
+                    <small>
+                      El monto debe ser en múltiplos de S/ 0.10
+                    </small>
+                  </div>
+
+                  <div style={{ padding: '1rem', backgroundColor: '#f0f8ff', borderRadius: '8px', marginBottom: '1rem' }}>
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Total a Pagar:</strong>{' '}
+                      S/ {displayTotalToPay.toFixed(2)}
+                      {rawTotal !== displayTotalToPay && ' (redondeado)'}
+                    </div>
+                    <div style={{ marginBottom: '0.5rem' }}>
+                      <strong>Monto Dado:</strong> S/ {amountGiven ? parseFloat(amountGiven).toFixed(2) : '0.00'}
+                    </div>
+                    <div style={{ borderTop: '1px solid #999', paddingTop: '0.5rem', marginTop: '0.5rem', fontSize: '1.1rem', fontWeight: 'bold', color: change > 0 ? '#28a745' : '#666' }}>
+                      <strong>Vuelto:</strong> S/ {change.toFixed(2)}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                // Formulario para pagos digitales
+                <div className="form-group">
+                  <label htmlFor="paymentAmount">Monto a Pagar (S/)</label>
+                  <input
+                    type="number"
+                    id="paymentAmount"
+                    value={paymentAmount}
+                    onChange={handlePaymentAmountChange}
+                    step="any"
+                    max={maxPaymentAmount.toFixed(2)}
+                    min="0.01"
+                    required
+                    disabled={processingPayment}
+                  />
+                  <small>
+                    Máximo: S/ {maxPaymentAmount.toFixed(2)}
+                  </small>
+                </div>
+              )}
 
               {!cashSession && (
                 <div className="badge badge-yellow" style={{ marginBottom: '1rem' }}>
