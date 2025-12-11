@@ -472,6 +472,22 @@ export async function registerAdvancePayment({
 
         paymentsCreated.push(newPayment);
 
+        // Recalcular estado de la cuota y marcar pagada si aplica
+        const allPaymentsNow = await tx.payment.findMany({
+          where: { installmentId: installment.id },
+        });
+        const lateFeeDetailsNow = calculateInstallmentLateFee(installment, allPaymentsNow);
+        const outstandingAmount = Number(lateFeeDetailsNow.pendingTotal || 0);
+        const shouldMarkAsPaid = outstandingAmount <= OUTSTANDING_TOLERANCE;
+
+        await tx.paymentSchedule.update({
+          where: { id: installment.id },
+          data: {
+            isPaid: shouldMarkAsPaid,
+            remainingBalance: shouldMarkAsPaid ? 0 : outstandingAmount,
+          },
+        });
+
         if (installmentLateFeePaid > 0) {
           let remainingLateFee = installmentLateFeePaid;
           const lateFees = await tx.lateFee.findMany({
@@ -917,6 +933,14 @@ export async function registerPayment({
           outstandingAmount,
           outstandingTolerance: OUTSTANDING_TOLERANCE,
           shouldMarkAsPaid,
+        });
+
+        await tx.paymentSchedule.update({
+          where: { id: installmentId },
+          data: {
+            isPaid: shouldMarkAsPaid,
+            remainingBalance: shouldMarkAsPaid ? 0 : outstandingAmount,
+          },
         });
       } else {
         console.log('?? No se encontr? la cuota con id:', installmentId);
