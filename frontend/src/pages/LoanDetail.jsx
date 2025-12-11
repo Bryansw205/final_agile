@@ -502,11 +502,18 @@ export default function LoanDetail() {
   function handleAmountGivenChange(e) {
     const given = parseFloat(e.target.value) || 0;
     setAmountGiven(e.target.value);
-    // Calcular vuelto = monto dado - total a pagar
-    const totalToPay = paymentMethod === 'EFECTIVO'
-      ? Number(roundCash(Number(displayTotalToPay)).toFixed(2))
-      : Number(displayTotalToPay.toFixed(2));
-    const calculatedChange = Math.max(0, given - totalToPay);
+    
+    // Para pagos parciales: el monto dado ES el monto a pagar
+    // No hay concepto de vuelto cuando es un pago parcial
+    // Solo hay vuelto si el monto dado >= total a pagar
+    const amountToPay = given; // Lo que el cliente paga es lo que da
+    const totalToPay = displayTotalToPay;
+    
+    // Calcular vuelto solo si el monto dado es >= al total a pagar
+    const calculatedChange = given >= totalToPay 
+      ? Math.max(0, given - totalToPay)
+      : 0;
+    
     setChange(Number(calculatedChange.toFixed(2)));
   }
 
@@ -631,24 +638,32 @@ export default function LoanDetail() {
       ? Number(roundCash(totalBase).toFixed(2))
       : Number(totalBase.toFixed(2));
 
-    // Para EFECTIVO: el cliente puede dar más (con vuelto) o exacto
-    // Para DIGITAL: debe ser exacto
+    // Validaciones para pagos parciales o completos
     if (paymentMethod === 'EFECTIVO') {
-      // El monto dado debe ser >= al total a pagar
-      if (finalAmount < totalToPay) {
-        setError(`El monto dado (S/ ${finalAmount.toFixed(2)}) debe ser mayor o igual al total a pagar (S/ ${totalToPay.toFixed(2)})`);
+      // Para EFECTIVO: el cliente puede pagar cualquier monto mayor a 0.10
+      // Permitir pagos parciales (no necesita ser >= al total)
+      const minAmount = 0.10;
+      if (finalAmount < minAmount) {
+        setError(`El monto mínimo es S/ ${minAmount.toFixed(2)}`);
+        return;
+      }
+      // El monto no puede exceder el total a pagar
+      if (finalAmount > totalToPay) {
+        setError(`El monto no puede ser mayor a S/ ${totalToPay.toFixed(2)}`);
         return;
       }
     } else {
-      // Para digitales, validamos el máximo permitido
+      // Para digitales: permitir pagos parciales también
       const maxAllowed = totalBase;
-      if (finalAmount > maxAllowed) {
-        setError(`El monto no puede ser mayor a S/ ${maxAllowed.toFixed(2)}`);
+      const minAmount = 2.00;
+      
+      if (finalAmount < minAmount) {
+        setError(`El monto mínimo para pago digital es S/ ${minAmount.toFixed(2)}`);
         return;
       }
 
-      if (paymentMethod === 'BILLETERA_DIGITAL' && finalAmount < 2) {
-        setError('El monto mínimo para pago digital es S/ 2.00');
+      if (finalAmount > maxAllowed) {
+        setError(`El monto no puede ser mayor a S/ ${maxAllowed.toFixed(2)}`);
         return;
       }
     }
@@ -684,10 +699,10 @@ export default function LoanDetail() {
         }, 1000);
       } else {
         // Pago con efectivo
-        // El amount que se registra es el totalToPay (redondeado), no el monto dado
+        // El amount que se registra es lo que el cliente realmente paga
         const paymentPayload = {
           loanId: parseInt(id),
-          amount: totalToPay, // Registramos el total a pagar (no el monto dado)
+          amount: finalAmount, // El monto que el cliente realmente paga (puede ser parcial)
           paymentMethod,
           cashSessionId: cashSession?.id || null,
           installmentId: selectedInstallment.id,
