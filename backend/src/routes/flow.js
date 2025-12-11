@@ -13,6 +13,44 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const router = Router();
+const OUTSTANDING_TOLERANCE = 0.05;
+
+async function finalizeReceiptForFlowPayment(externalReference) {
+  // Asigna BOLETA y marca cuota pagada si ya se cubrió el monto
+  const payments = await prisma.payment.findMany({
+    where: { externalReference, receiptType: null },
+  });
+
+  for (const payment of payments) {
+    const updated = await prisma.payment.update({
+      where: { id: payment.id },
+      data: { receiptType: 'BOLETA' },
+      select: { id: true, installmentId: true, amount: true },
+    });
+
+    if (updated.installmentId) {
+      const installment = await prisma.paymentSchedule.findUnique({
+        where: { id: updated.installmentId },
+      });
+      if (installment) {
+        const paymentsForInstallment = await prisma.payment.findMany({
+          where: { installmentId: updated.installmentId, receiptType: { not: null } },
+          select: { amount: true },
+        });
+        const totalPaid = paymentsForInstallment.reduce(
+          (sum, p) => sum + Number(p.amount),
+          0
+        );
+        if (totalPaid >= Number(installment.installmentAmount) - OUTSTANDING_TOLERANCE) {
+          await prisma.paymentSchedule.update({
+            where: { id: updated.installmentId },
+            data: { isPaid: true, remainingBalance: 0 },
+          });
+        }
+      }
+    }
+  }
+}
 
 /**
  * POST /flow/create-payment
@@ -281,6 +319,7 @@ router.get(
                 installmentIds: targetInstallmentIds,
                 externalReference: status.flowOrder.toString(),
               });
+              await finalizeReceiptForFlowPayment(status.flowOrder.toString());
             } else {
               await registerPayment({
                 loanId,
@@ -291,6 +330,7 @@ router.get(
                 installmentId,
                 externalReference: status.flowOrder.toString(),
               });
+              await finalizeReceiptForFlowPayment(status.flowOrder.toString());
             }
           } else {
             console.log(`?? Pago ya exist?a: ${status.flowOrder}`);
@@ -454,6 +494,7 @@ router.post(
                 installmentIds: targetInstallmentIds,
                 externalReference: paymentStatus.flowOrder.toString(),
               });
+              await finalizeReceiptForFlowPayment(paymentStatus.flowOrder.toString());
             } else {
               await registerPayment({
                 loanId,
@@ -464,6 +505,7 @@ router.post(
                 installmentId,
                 externalReference: paymentStatus.flowOrder.toString(),
               });
+              await finalizeReceiptForFlowPayment(paymentStatus.flowOrder.toString());
             }
           } else {
             console.log(`?? Pago ya exist?a: ${paymentStatus.flowOrder}`);
@@ -567,6 +609,7 @@ router.post(
         cashSessionId,
         externalReference: paymentStatus.flowOrder.toString(),
       });
+      await finalizeReceiptForFlowPayment(paymentStatus.flowOrder.toString());
 
       res.json({
         success: true,
