@@ -356,8 +356,14 @@ export async function registerAdvancePayment({
     throw new Error('El monto del pago debe ser mayor a cero');
   }
 
-  if (Math.abs(paymentAmount - totalOwed) > OUTSTANDING_TOLERANCE) {
-    throw new Error(`El monto debe ser exactamente S/ ${totalOwed.toFixed(2)}. Ingres? S/ ${paymentAmount.toFixed(2)}`);
+  // Para efectivo, permitir el monto redondeado; para otros metodos exigir exactitud
+  if (paymentMethod === 'EFECTIVO') {
+    const expectedCashAmount = applyRounding(totalOwed);
+    if (Math.abs(paymentAmount - expectedCashAmount) > OUTSTANDING_TOLERANCE) {
+      throw new Error(`Para efectivo, el monto debe ser S/ ${expectedCashAmount.toFixed(2)} (total exacto S/ ${totalOwed.toFixed(2)}). Ingresó S/ ${paymentAmount.toFixed(2)}`);
+    }
+  } else if (Math.abs(paymentAmount - totalOwed) > OUTSTANDING_TOLERANCE) {
+    throw new Error(`El monto debe ser exactamente S/ ${totalOwed.toFixed(2)}. Ingresó S/ ${paymentAmount.toFixed(2)}`);
   }
 
   if (paymentMethod === 'EFECTIVO') {
@@ -658,6 +664,16 @@ export async function registerPayment({
 
   if (paymentAmount <= 0) {
     throw new Error('El monto del pago debe ser mayor a cero');
+  }
+
+  // Validar monto esperado: efectivo acepta el monto redondeado segun norma
+  if (paymentMethod === 'EFECTIVO') {
+    const expectedCashAmount = applyRounding(pendingTotal);
+    if (Math.abs(paymentAmount - expectedCashAmount) > OUTSTANDING_TOLERANCE) {
+      throw new Error(`Para efectivo, el monto debe ser S/ ${expectedCashAmount.toFixed(2)} (total exacto S/ ${pendingTotal.toFixed(2)}). Ingresó S/ ${paymentAmount.toFixed(2)}`);
+    }
+  } else if (Math.abs(paymentAmount - pendingTotal) > OUTSTANDING_TOLERANCE) {
+    throw new Error(`El monto debe ser exactamente S/ ${pendingTotal.toFixed(2)}. Ingresó S/ ${paymentAmount.toFixed(2)}`);
   }
 
   // Si se especifica una cuota, validar que las cuotas anteriores estén pagadas
