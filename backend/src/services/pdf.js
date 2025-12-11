@@ -221,198 +221,134 @@ export function buildPaymentReceipt(doc, payment, invoiceInfo = {}) {
  * Genera una FACTURA ELECTRÓNICA con formato profesional
  */
 function buildInvoicePdf(doc, payment, invoiceInfo = {}) {
-  const margin = 20;
+  const margin = 25;
   const contentWidth = doc.page.width - margin * 2;
   const client = payment.loan.client;
   const issuer = {
-    name: 'NOTICICER CONTABLE',
-    ruc: '20556106909',
-    address: 'CAL. MARTIR OLAYA 129 DPTO. 1107 ALT CDRA. 01 DE AV. PARDO MIRAFLORES - LIMA - LIMA',
-    docType: 'RUC'
+    name: 'CapiPresta',
+    ruc: '20123456789',
+    address: 'C. Los Almendros 2013, Trujillo 13008',
   };
 
   const total = Number(payment.amount || 0);
   const opGravada = round2(total / 1.18);
   const igv = round2(total - opGravada);
   
-  const series = 'E001';
-  const correlative = String(invoiceInfo.correlative || 1).padStart(4, '0');
+  const series = 'F001';
+  const correlative = String(invoiceInfo.correlative || 1).padStart(8, '0');
   const comprobanteFull = `${series}-${correlative}`;
 
   let y = margin;
 
-  // Encabezado: Razón social
-  doc.font('Helvetica-Bold').fontSize(13).text(issuer.name, margin, y, { align: 'left' });
-  y += 16;
-  doc.font('Helvetica').fontSize(10).text('NOTICIERO DEL CONTADOR S.A.C.', margin, y);
+  // Encabezado: Razón social del emisor
+  doc.font('Helvetica-Bold').fontSize(12).text(issuer.name, margin, y);
+  y += 13;
+  doc.font('Helvetica').fontSize(10).text(issuer.address, margin, y);
   y += 12;
-  doc.fontSize(9).text(issuer.address, margin, y, { width: contentWidth - 200 });
   
   // Caja de factura en esquina superior derecha
-  const boxWidth = 180;
+  const boxWidth = 160;
   const boxX = doc.page.width - margin - boxWidth;
-  const boxY = margin - 5;
-  doc.rect(boxX, boxY, boxWidth, 85).stroke();
+  const boxY = margin;
+  doc.rect(boxX, boxY, boxWidth, 70).stroke();
   doc.font('Helvetica-Bold').fontSize(11);
   doc.text('FACTURA ELECTRÓNICA', boxX + 8, boxY + 8, { width: boxWidth - 16, align: 'center' });
   doc.fontSize(10).text(`RUC: ${issuer.ruc}`, boxX + 8, boxY + 24, { width: boxWidth - 16, align: 'center' });
-  doc.text(comprobanteFull, boxX + 8, boxY + 40, { width: boxWidth - 16, align: 'center' });
-  doc.font('Helvetica').fontSize(9);
-  doc.text('Forma de pago: Crédito', boxX + 8, boxY + 58, { width: boxWidth - 16, align: 'center' });
+  doc.fontSize(11).text(comprobanteFull, boxX + 8, boxY + 44, { width: boxWidth - 16, align: 'center' });
 
-  y += 75;
+  y += 15;
 
-  // Datos de vencimiento
+  // Datos del documento
   doc.font('Helvetica').fontSize(9);
-  doc.text('Fecha de Vencimiento : 05/10/2021', margin, y);
+  doc.text(`Fecha de Emisión: ${formatDate(payment.paymentDate)}`, margin, y);
   y += 11;
-  doc.text(`Fecha de Emisión : ${formatDate(payment.paymentDate)}`, margin, y);
+  doc.text('Fecha de Vencimiento: ' + formatDate(new Date(new Date(payment.paymentDate).getTime() + 30 * 24 * 60 * 60 * 1000)), margin, y);
   y += 11;
-  doc.text(`Señor(es) : ${invoiceInfo.customerName || client.firstName + ' ' + client.lastName}`, margin, y);
+  
+  // Datos del cliente
+  doc.text(`Señor(es): ${invoiceInfo.customerName || client.firstName + ' ' + client.lastName}`, margin, y);
   y += 11;
-  doc.text(`RUC : ${invoiceInfo.customerRuc || '-'}`, margin, y);
+  doc.text(`RUC: ${invoiceInfo.customerRuc || '-'}`, margin, y);
   y += 11;
-  doc.text('Dirección del Receptor de la factura :', margin, y);
+  doc.text('Dirección: ' + (invoiceInfo.customerAddress || '-'), margin, y);
+  y += 12;
+  
+  // Información de la operación
+  doc.font('Helvetica-Bold').fontSize(9);
+  doc.text('Tipo de Moneda: SOLES', margin, y);
   y += 11;
-  doc.text('Dirección del Cliente : ' + (invoiceInfo.customerAddress || '-'), margin, y);
+  doc.text('Forma de Pago: CONTADO', margin, y);
   y += 11;
-  doc.text('Tipo de Moneda : SOLES', margin, y);
-  y += 11;
-  doc.font('Helvetica-Bold');
-  doc.text(`Observación : DETRACCION (12%): S/ ${formatCurrency(igv)}`, margin, y);
+  doc.text('Tipo de Operación: VENTA INTERNA', margin, y);
   y += 18;
 
   // Tabla de items
-  const colWidths = [90, 280, 80, 80];
+  const colWidths = [70, 280, 80, 80];
   const tableStartX = margin;
   const tableY = y;
 
   // Header
   doc.font('Helvetica-Bold').fontSize(9);
-  doc.rect(tableStartX, tableY, contentWidth, 20).fill('#333333');
+  doc.rect(tableStartX, tableY, contentWidth, 18).fill('#333333');
   doc.fillColor('white');
+  const headers = ['CANTIDAD', 'CÓDIGO y DESCRIPCIÓN', 'PRECIO UNITARIO', 'PRECIO TOTAL'];
   let colX = tableStartX + 6;
-  const headers = ['Cantidad', 'Unidad Medida Código', 'Descripción', 'Valor Unitario', 'ICBPER'];
-  doc.text('Cantidad', colX, tableY + 4, { width: colWidths[0], align: 'left' });
-  doc.text('Unidad Medida Código', colX + colWidths[0], tableY + 4, { width: colWidths[1] - 100, align: 'left' });
-  doc.text('Descripción', colX + colWidths[0] + colWidths[1] - 100, tableY + 4, { width: 100, align: 'left' });
-  doc.text('Valor Unitario', colX + colWidths[0] + colWidths[1], tableY + 4, { width: colWidths[2], align: 'right' });
-  doc.text('ICBPER', colX + colWidths[0] + colWidths[1] + colWidths[2], tableY + 4, { width: colWidths[3], align: 'right' });
+  headers.forEach((h, idx) => {
+    doc.text(h, colX, tableY + 4, { width: colWidths[idx] - 12, align: idx >= 2 ? 'right' : 'left' });
+    colX += colWidths[idx];
+  });
   
+  // Fila de item
   doc.fillColor('black');
-  y = tableY + 20;
-
-  // Filas de items
+  y = tableY + 18;
   doc.font('Helvetica').fontSize(9);
-  doc.text('1.00', tableStartX + 6, y, { width: colWidths[0], align: 'left' });
-  doc.text('UNIDAD', tableStartX + 6 + colWidths[0], y, { width: colWidths[1] - 100, align: 'left' });
-  doc.text('CONTABILI SERVICIO DE CONTABILIDAD MES SETIEMBRE 2021', tableStartX + 6 + colWidths[0] + colWidths[1] - 100, y, { width: 100, align: 'left' });
-  doc.text(formatCurrency(opGravada), tableStartX + 6 + colWidths[0] + colWidths[1], y, { width: colWidths[2], align: 'right' });
-  doc.text('0.00', tableStartX + 6 + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3], align: 'right' });
+  colX = tableStartX + 6;
+  doc.text('1', colX, y + 6, { width: colWidths[0] - 12, align: 'left' });
+  colX += colWidths[0];
+  doc.text('Pago de cuota #' + (payment.installmentId ? '1' : 'Adelanto'), colX, y + 6, { width: colWidths[1] - 12, align: 'left' });
+  colX += colWidths[1];
+  doc.text(formatCurrency(opGravada), colX, y + 6, { width: colWidths[2] - 12, align: 'right' });
+  colX += colWidths[2];
+  doc.text(formatCurrency(total), colX, y + 6, { width: colWidths[3] - 12, align: 'right' });
   
-  y += 20;
+  y += 25;
   doc.moveTo(tableStartX, y).lineTo(tableStartX + contentWidth, y).stroke();
 
-  // Totales - lado izquierdo
-  y += 10;
-  doc.font('Helvetica').fontSize(9);
-  doc.text('Valor de Venta de Operaciones Gratuitas : ' + formatCurrency(0), margin, y);
-  y += 25;
-
-  // Tabla de totales - lado derecho
-  const totalsX = margin + 280;
-  let totalsY = tableY + 20;
-  
+  // Totales
+  y += 12;
   doc.font('Helvetica-Bold').fontSize(9);
-  doc.text('Sub Total Ventas :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text(formatCurrency(opGravada), totalsX + 130, totalsY, { width: 60, align: 'right' });
   
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Anticipos :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
+  // Left side
+  doc.text('Valor de Venta de Operaciones Gratuitas:', margin, y);
+  doc.font('Helvetica').fontSize(9);
+  doc.text('S/ 0.00', margin + 200, y, { align: 'right' });
   
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Descuentos :', totalsX, totalsY, { width: 120, align: 'right' });
+  // Right side totals
+  const totalsX = margin + 280;
+  y -= 5;
+  doc.font('Helvetica-Bold');
+  doc.text('Sub Total Ventas:', totalsX, y, { width: 120, align: 'right' });
   doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
+  doc.text(formatCurrency(opGravada), totalsX + 130, y, { width: 60, align: 'right' });
   
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Valor Venta :', totalsX, totalsY, { width: 120, align: 'right' });
+  y += 11;
+  doc.font('Helvetica-Bold');
+  doc.text('IGV:', totalsX, y, { width: 120, align: 'right' });
   doc.font('Helvetica');
-  doc.text(formatCurrency(opGravada), totalsX + 130, totalsY, { width: 60, align: 'right' });
+  doc.text(formatCurrency(igv), totalsX + 130, y, { width: 60, align: 'right' });
   
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('ISC :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
+  y += 11;
+  doc.font('Helvetica-Bold');
+  doc.text('IMPORTE TOTAL (S/):', totalsX, y, { width: 120, align: 'right' });
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text(formatCurrency(total), totalsX + 130, y, { width: 60, align: 'right' });
   
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('IGV :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text(formatCurrency(igv), totalsX + 130, totalsY, { width: 60, align: 'right' });
-  
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('ICBPER :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
-  
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Otros Cargos :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
-  
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Otros Tributos :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
-  
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Monto de redondeo :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text('S/ 0.00', totalsX + 130, totalsY, { width: 60, align: 'right' });
-  
-  totalsY += 16;
-  doc.font('Helvetica-Bold').text('Importe Total :', totalsX, totalsY, { width: 120, align: 'right' });
-  doc.font('Helvetica');
-  doc.text(formatCurrency(total), totalsX + 130, totalsY, { width: 60, align: 'right' });
-
-  // SON
-  y = totalsY + 30;
+  y += 20;
   doc.font('Helvetica-Bold').fontSize(10);
   doc.text(`SON: ${numberToWords(total)} SOLES`, margin, y, { width: contentWidth, align: 'left' });
 
-  // Información del crédito
-  y += 30;
-  doc.rect(margin, y, contentWidth, 50).stroke();
-  doc.font('Helvetica-Bold').fontSize(9);
-  doc.text('Información del crédito', margin + 8, y + 8);
-  doc.font('Helvetica');
-  doc.text(`Monto neto pendiente de pago : S/ ${formatCurrency(total)}`, margin + 8, y + 22);
-  doc.text('Total de Cuotas : 1', margin + 8, y + 35);
-
-  // Tabla de cuotas
-  y += 60;
-  doc.font('Helvetica-Bold').fontSize(9);
-  doc.rect(margin, y, contentWidth, 18).fill('#333333');
-  doc.fillColor('white');
-  doc.text('N° Cuota', margin + 8, y + 4);
-  doc.text('Fec. Venc.', margin + 120, y + 4);
-  doc.text('Monto', margin + 240, y + 4);
-  doc.text('N° Cuota', margin + 340, y + 4);
-  doc.text('Fec. Venc.', margin + 460, y + 4);
-  doc.text('Monto', margin + 540, y + 4);
-  
-  doc.fillColor('black');
-  y += 18;
-  doc.font('Helvetica').fontSize(9);
-  doc.text('1', margin + 8, y);
-  doc.text(formatDate(payment.paymentDate), margin + 120, y);
-  doc.text(formatCurrency(total), margin + 240, y);
-
   // Footer
-  y = doc.page.height - margin - 30;
+  y = doc.page.height - margin - 20;
   doc.font('Helvetica').fontSize(8);
   doc.text('Esta es una representación impresa de la factura electrónica, generada en el Sistema de SUNAT. Puede verificarla usando su clave SOL.', margin, y, { width: contentWidth, align: 'center' });
 }
