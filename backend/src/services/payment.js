@@ -15,25 +15,45 @@ function round2(v) {
 }
 
 /**
- * Aplica redondeo simple a 2 decimales según regla de usuario:
- * - Si la parte decimal > 0.05: redondea hacia arriba
- * - Si la parte decimal <= 0.05: redondea hacia abajo
- * @param {number} amount - El monto a redondear
- * @returns {number} - El monto redondeado
+ * Aplica Redondeo de Banquero (Redondeo al Par Más Cercano)
+ * Reglas:
+ * - Si saldo < 0.05: redondea a 0 (cuota considerada pagada)
+ * - Si saldo >= 0.05: redondea a 0.10
+ * - Si dígito anterior a 0.05 es par, redondea hacia abajo
+ * - Si es impar, redondea hacia arriba para que resultado sea par
  */
 export function applyRounding(amount) {
-  const num = Number(amount);
+  const cents = Math.round((amount % 1) * 100);
+  const integerPart = Math.floor(amount);
   
-  // Obtener la parte decimal (ej: 150.67 -> 0.67)
-  const decimalPart = num % 1;
-  
-  // Si la parte decimal es > 0.05, redondea hacia arriba al siguiente centavo
-  if (decimalPart > 0.05) {
-    return Math.ceil(num * 100) / 100;
+  // Si los centavos son menores a 5, redondea hacia abajo (condonar)
+  if (cents < 5) {
+    return integerPart; // Cuota considerada como pagada
   }
   
-  // Si es <= 0.05, redondea hacia abajo (descarta decimales)
-  return Math.floor(num * 100) / 100;
+  // Si los centavos están entre 5-9, redondea hacia arriba a 0.10
+  if (cents >= 5 && cents <= 9) {
+    return integerPart + 0.10; // Redondea hacia arriba a .10
+  }
+  
+  // Para centavos 10-99, aplicar redondeo de banquero
+  const decimalPart = Math.floor(cents / 10) * 10;
+  const remainder = cents % 10;
+  
+  if (remainder < 5) {
+    // Redondea hacia abajo al múltiplo de 10 anterior (redondeo de banquero)
+    return integerPart + (decimalPart / 100);
+  } else if (remainder > 5) {
+    // Redondea hacia arriba
+    return integerPart + ((decimalPart + 10) / 100);
+  } else {
+    // remainder === 5: Redondeo de banquero (al par más cercano)
+    const tenthDigit = Math.floor((decimalPart / 10) % 10);
+    const isEven = tenthDigit % 2 === 0;
+    return isEven 
+      ? integerPart + (decimalPart / 100)  // Mantiene decimal par
+      : integerPart + ((decimalPart + 10) / 100);  // Redondea hacia par
+  }
 }
 
 /**
