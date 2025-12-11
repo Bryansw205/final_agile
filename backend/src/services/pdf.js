@@ -571,47 +571,6 @@ function buildBoleta(doc, payment, invoiceInfo = {}) {
   doc.text(formatCurrency(total), startX + colWidths[0] + colWidths[1] + colWidths[2], totalsY + 28, { width: colWidths[3], align: 'right' });
   doc.font('Helvetica');
 
-  // Tabla de Retención (si el préstamo es > 700 soles)
-  const loanAmount = Number(payment.loan?.principal || 0);
-  const retentionPercentage = 0.03; // 3%
-  const retentionAmount = total * retentionPercentage;
-  
-  doc.moveDown(1.5);
-  const retentionTableY = doc.y;
-  const retentionColWidths = [contentWidth / 3, contentWidth / 3, contentWidth / 3];
-  
-  // Encabezado tabla de retención
-  doc.rect(startX, retentionTableY, contentWidth, 20).fill('#e0e0e0');
-  doc.fillColor('black').font('Helvetica-Bold').fontSize(9);
-  
-  const retentionHeaders = ['Base Imponible de la Retención', 'Porcentaje de la Retención', 'Monto de la Retención'];
-  let retentionX = startX + 6;
-  retentionHeaders.forEach((header, idx) => {
-    doc.text(header, retentionX, retentionTableY + 4, { width: retentionColWidths[idx] - 12, align: 'center' });
-    retentionX += retentionColWidths[idx];
-  });
-  
-  // Fila de datos de retención
-  doc.font('Helvetica').fontSize(9);
-  let retentionDataY = retentionTableY + 20;
-  doc.rect(startX, retentionDataY, contentWidth, 18).stroke();
-  
-  retentionX = startX + 6;
-  
-  // Mostrar valores solo si el préstamo es > 700
-  if (loanAmount > 700) {
-    // Primera columna: Base imponible (importe total)
-    doc.text(formatCurrency(total), retentionX, retentionDataY + 3, { width: retentionColWidths[0] - 12, align: 'right' });
-    retentionX += retentionColWidths[0];
-    
-    // Segunda columna: Porcentaje
-    doc.text('3.00%', retentionX, retentionDataY + 3, { width: retentionColWidths[1] - 12, align: 'center' });
-    retentionX += retentionColWidths[1];
-    
-    // Tercera columna: Monto de retención
-    doc.text(formatCurrency(retentionAmount), retentionX, retentionDataY + 3, { width: retentionColWidths[2] - 12, align: 'right' });
-  }
-
   // SON:
   doc.moveDown(2);
   doc.font('Helvetica-Bold').fontSize(11);
