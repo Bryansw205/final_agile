@@ -1034,6 +1034,18 @@ export async function registerPayment({
           outstandingTolerance: OUTSTANDING_TOLERANCE,
           shouldMarkAsPaid,
         });
+
+        // Marcar la cuota como pagada si ya se cubrió el monto
+        if (shouldMarkAsPaid) {
+          console.log('✅ Marcando cuota como pagada:', installmentId);
+          await tx.paymentSchedule.update({
+            where: { id: installmentId },
+            data: { 
+              isPaid: true, 
+              remainingBalance: 0 
+            },
+          });
+        }
       } else {
         console.log('?? No se encontr? la cuota con id:', installmentId);
       }
