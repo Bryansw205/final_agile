@@ -72,6 +72,9 @@ export function calculateInstallmentLateFee(schedule, payments) {
     return { hasLateFee: false, lateFeeAmount: 0, remainingInstallment, pendingTotal: remainingInstallment };
   }
 
+  // ESTÁ VENCIDA - Calcular mora
+  // Mora compuesta: se acumula cada mes (o cada 30 días)
+  
   const paymentsAfterDue = paymentsForInstallment
     .filter(p => dayjs.tz(p.paymentDate, TZ).isAfter(dueDate))
     .sort((a, b) => dayjs.tz(a.paymentDate, TZ).valueOf() - dayjs.tz(b.paymentDate, TZ).valueOf());
@@ -89,9 +92,7 @@ export function calculateInstallmentLateFee(schedule, payments) {
 
   let outstanding = Math.max(0, round2(installmentAmount - paidOnOrBeforeDue));
   let accruedLateFee = 0;
-  let cursor = dueDate;
-  let idx = 0;
-
+  
   const applyPayment = (payment) => {
     const paidTotal =
       Number(payment.principalPaid || 0) +
@@ -100,14 +101,35 @@ export function calculateInstallmentLateFee(schedule, payments) {
     outstanding = Math.max(0, round2(outstanding - paidTotal));
   };
 
-  // Mora acumulativa compuesta: cada mes se aplica 1% sobre el saldo total actual (cuota + mora acumulada)
-  // Fórmula: Total = Cuota × (1.01)^meses
+  // Mora acumulativa compuesta: cada 30 días se aplica 1% sobre el total acumulado
+  // La mora comienza desde el día 1 de atraso, se acumula cada 30 días
+  let cursor = dueDate.clone();
+  let idx = 0;
+  
+  // Aplicar mora inicial (desde el día 1 de atraso hasta el primer período de 30 días)
+  // La mora se aplica como: mora_diaria = 1% / 30 días
+  const daysLate = today.diff(dueDate, 'days');
+  
+  if (daysLate > 0 && outstanding > OUTSTANDING_TOLERANCE) {
+    // Calcular mora proporcional al número de días
+    // Si hace 7 días está vencida: mora = (7/30) * 1% = 0.00233...
+    // Pero para simplificar, aplicamos 1% completo si ya pasó al menos 1 día
+    const currentTotal = round2(outstanding + accruedLateFee);
+    const dailyMoraRate = 0.01 / 30; // 1% dividido entre 30 días
+    const moraForDaysLate = round2(currentTotal * dailyMoraRate * Math.min(daysLate, 30));
+    accruedLateFee = round2(accruedLateFee + moraForDaysLate);
+  }
+  
+  // Ahora aplicar mora por períodos completos de 30 días
   while (true) {
-    const nextBoundary = cursor.add(1, 'month');
+    const nextBoundary = cursor.clone().add(30, 'days');
+    
+    // Si el siguiente período está en el futuro, terminar
     if (nextBoundary.isAfter(today)) {
       break;
     }
-
+    
+    // Aplicar pagos hasta este punto
     while (idx < paymentsAfterDue.length) {
       const paymentDate = dayjs.tz(paymentsAfterDue[idx].paymentDate, TZ);
       if (paymentDate.isAfter(nextBoundary)) break;
@@ -115,7 +137,7 @@ export function calculateInstallmentLateFee(schedule, payments) {
       idx += 1;
     }
 
-    // Si hay saldo pendiente, aplicar 1% de mora sobre el total acumulado (cuota + mora anterior)
+    // Si hay saldo pendiente, aplicar 1% de mora sobre el total acumulado
     if (outstanding > OUTSTANDING_TOLERANCE) {
       const currentTotal = round2(outstanding + accruedLateFee);
       const lateFeeThisMonth = round2(currentTotal * 0.01);
@@ -125,6 +147,7 @@ export function calculateInstallmentLateFee(schedule, payments) {
     cursor = nextBoundary;
   }
 
+  // Aplicar pagos finales después del último período
   while (idx < paymentsAfterDue.length) {
     applyPayment(paymentsAfterDue[idx]);
     idx += 1;
