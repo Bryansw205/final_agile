@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { addCashMovement, validateChangeAvailable } from './cashService.js';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
@@ -365,11 +366,33 @@ export async function registerAdvancePayment({
 
   let paymentAmount = Number(amount);
   let roundingAdjustment = 0;
+  let cashAmountGiven = amountGiven !== null && amountGiven !== undefined ? Number(amountGiven) : null;
+  let cashChange = change !== null && change !== undefined ? Number(change) : null;
 
   if (paymentMethod === 'EFECTIVO') {
     const roundedAmount = applyRounding(paymentAmount);
     roundingAdjustment = round2(roundedAmount - paymentAmount);
     paymentAmount = roundedAmount;
+
+    // Validar monto entregado y calcular vuelto
+    if (cashAmountGiven === null) {
+      cashAmountGiven = paymentAmount; // pago exacto
+    }
+    const expectedChange = round2(cashAmountGiven - paymentAmount);
+    if (expectedChange < -OUTSTANDING_TOLERANCE) {
+      throw new Error('El monto entregado es menor al monto a pagar');
+    }
+    cashChange = Math.max(0, expectedChange);
+    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.009) {
+      throw new Error('El vuelto indicado no coincide con el monto entregado');
+    }
+
+    if (cashChange > 0) {
+      const validation = await validateChangeAvailable(Number(cashSessionId), cashChange);
+      if (!validation.available) {
+        throw new Error(No hay efectivo suficiente en caja para dar vuelto. Disponible: S/ );
+      }
+    }
   }
 
   if (paymentAmount <= 0) {
@@ -722,6 +745,8 @@ export async function registerPayment({
 
   let paymentAmount = Number(amount);
   let roundingAdjustment = 0;
+  let cashAmountGiven = amountGiven !== null && amountGiven !== undefined ? Number(amountGiven) : null;
+  let cashChange = change !== null && change !== undefined ? Number(change) : null;
 
   // Calcular el máximo permitido según el método de pago
   // EFECTIVO: máximo redondeado | Otros métodos: máximo original (sin redondear)
@@ -735,6 +760,28 @@ export async function registerPayment({
     const roundedAmount = applyRounding(paymentAmount);
     roundingAdjustment = round2(roundedAmount - paymentAmount);
     paymentAmount = roundedAmount;
+
+    // Validar monto entregado y calcular vuelto
+    if (cashAmountGiven === null) {
+      cashAmountGiven = paymentAmount; // pago exacto
+    }
+    const expectedChange = round2(cashAmountGiven - paymentAmount);
+    if (expectedChange < -OUTSTANDING_TOLERANCE) {
+      throw new Error('El monto entregado es menor al monto a pagar');
+    }
+    cashChange = Math.max(0, expectedChange);
+    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.009) {
+      throw new Error('El vuelto indicado no coincide con el monto entregado');
+    }
+
+    if (cashChange > 0) {
+      const validation = await validateChangeAvailable(Number(cashSessionId), cashChange);
+      if (!validation.available) {
+        throw new Error(
+          `No hay efectivo suficiente en caja para dar vuelto. Disponible: S/ ${validation.currentBalance.toFixed(2)}`
+        );
+      }
+    }
   }
 
   if (paymentAmount <= 0) {
@@ -899,8 +946,8 @@ export async function registerPayment({
         installmentId, // Asociar con la cuota específica
         registeredByUserId,
         amount: paymentAmount,
-        amountGiven: amountGiven || null,
-        change: change || null,
+        amountGiven: cashAmountGiven,
+        change: cashChange,
         paymentMethod,
         principalPaid,
         interestPaid,
@@ -994,6 +1041,28 @@ export async function registerPayment({
 
     return newPayment;
   });
+
+  // Registrar movimientos de caja (solo efectivo)
+  if (paymentMethod === 'EFECTIVO') {
+    // Ingreso por recaudaci??n
+    await addCashMovement({
+      cashSessionId: Number(cashSessionId),
+      movementType: 'RECAUDACION',
+      amount: paymentAmount,
+      description: Pago pr??stamo #,
+      relatedPaymentId: payment.id,
+    });
+
+    if (cashChange && cashChange > 0) {
+      await addCashMovement({
+        cashSessionId: Number(cashSessionId),
+        movementType: 'VUELTO',
+        amount: cashChange,
+        description: Vuelto pago #,
+        relatedPaymentId: payment.id,
+      });
+    }
+  }
 
   // Incluir información de cuota pagada en la respuesta
   if (installmentId) {
