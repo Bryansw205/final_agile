@@ -7,16 +7,26 @@ import { formatDate } from '../lib/date.js';
 
 /**
  * Redondeo para efectivo en Perú
- * Redondea al múltiplo de 0.10 más cercano
+ * Regla de redondeo:
+ * - Si la parte decimal > 0.05: redondea hacia arriba al siguiente 0.10
+ * - Si la parte decimal <= 0.05: redondea hacia abajo al 0.10 anterior
  * Ejemplos:
- *   95.51 -> 95.50
- *   95.55 -> 95.60 (redondeo de banquero: .55 -> .60 porque 5 es impar)
- *   95.54 -> 95.50
- *   95.56 -> 95.60
+ *   10.66 -> 10.70 (0.66 > 0.05, redondea arriba)
+ *   10.56 -> 10.60 (0.56 > 0.05, redondea arriba)
+ *   10.04 -> 10.00 (0.04 <= 0.05, redondea abajo)
+ *   10.05 -> 10.00 (0.05 <= 0.05, redondea abajo)
  */
 function roundCash(amount) {
-  // Redondear al múltiplo de 0.10 más cercano
-  return Math.round(amount * 10) / 10;
+  const num = Number(amount);
+  const decimalPart = num % 1;
+  
+  // Si la parte decimal es > 0.05, redondea hacia arriba al siguiente 0.10
+  if (decimalPart > 0.05) {
+    return Math.ceil(num * 10) / 10;
+  }
+  
+  // Si es <= 0.05, redondea hacia abajo al 0.10 anterior
+  return Math.floor(num * 10) / 10;
 }
 
 export default function LoanDetail() {
