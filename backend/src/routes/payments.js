@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import { handleValidation } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
+import { PrismaClient } from '@prisma/client';
 import { 
   registerPayment,
   registerAdvancePayment, 
@@ -11,6 +12,7 @@ import {
 import { buildPaymentReceipt, createPdfDocument } from '../services/pdf.js';
 
 const router = Router();
+const prisma = new PrismaClient();
 
 /**
  * POST /payments
@@ -500,8 +502,8 @@ router.post(
   body('paymentIds.*').isInt({ gt: 0 }),
   body('receiptType').isIn(['BOLETA', 'FACTURA']),
   body('invoiceRuc').optional({ checkFalsy: true }).matches(/^[0-9]{11}$/),
-  body('invoiceBusinessName').optional().isString(),
-  body('invoiceAddress').optional().isString(),
+  body('invoiceBusinessName').optional({ checkFalsy: true }).isString(),
+  body('invoiceAddress').optional({ checkFalsy: true }).isString(),
   handleValidation,
   async (req, res, next) => {
     try {
@@ -565,14 +567,12 @@ router.post(
           return res.status(400).json({ errors });
         }
       }
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
-
-    const updated = await prisma.payment.update({
-      where: { id },
-      data: {
-        receiptType,
-        invoiceRuc: invoiceRuc || null,
+      
+      const updated = await prisma.payment.update({
+        where: { id },
+        data: {
+          receiptType,
+          invoiceRuc: invoiceRuc || null,
           invoiceBusinessName: invoiceBusinessName || null,
           invoiceAddress: invoiceAddress || null,
         },
