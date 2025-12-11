@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { getCashSessionBalance, getCashMovements } from './cashService.js';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc.js';
 import timezone from 'dayjs/plugin/timezone.js';
@@ -153,7 +154,11 @@ export async function getCurrentCashSession(userId) {
     return null;
   }
 
-  // Calcular totales por método de pago
+  // Balance y movimientos de caja (incluye ingresos/egresos/vueltos)
+  const balance = await getCashSessionBalance(session.id);
+  const movements = await getCashMovements(session.id);
+
+  // Calcular totales por m?todo de pago (solo pagos, informativo)
   const paymentsByMethod = session.payments.reduce((acc, payment) => {
     const method = payment.paymentMethod;
     if (!acc[method]) {
@@ -167,11 +172,12 @@ export async function getCurrentCashSession(userId) {
     return acc;
   }, {});
 
-  const totalCash = paymentsByMethod.EFECTIVO?.total || 0;
-  const expectedClosingBalance = round2(Number(session.openingBalance) + totalCash);
+  const totalCash = balance.currentBalance;
+  const expectedClosingBalance = round2(balance.currentBalance);
 
   return {
     ...session,
+    movements,
     summary: {
       paymentsByMethod,
       totalPayments: session.payments.length,
@@ -182,9 +188,6 @@ export async function getCurrentCashSession(userId) {
   };
 }
 
-/**
- * Obtiene el historial de sesiones de caja
- */
 export async function getCashSessionHistory({ userId, startDate, endDate, limit = 50 }) {
   const where = {
     ...(userId && { userId }),

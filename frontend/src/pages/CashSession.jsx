@@ -252,6 +252,34 @@ async function handleCloseSession() {
               </table>
             </div>
           )}
+
+          {cashSession.movements && cashSession.movements.length > 0 && (
+            <div className="card" style={{ marginTop: '2rem' }}>
+              <h2>Movimientos de Caja</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha/Hora</th>
+                    <th>Tipo</th>
+                    <th>Monto</th>
+                    <th>Descripción</th>
+                    <th>Relacionado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashSession.movements.map((mov) => (
+                    <tr key={mov.id}>
+                      <td>{new Date(mov.createdAt).toLocaleString('es-PE')}</td>
+                      <td>{mov.movementType}</td>
+                      <td>S/ {Number(mov.amount).toFixed(2)}</td>
+                      <td>{mov.description || '-'}</td>
+                      <td>{mov.relatedPaymentId ? `Pago #${mov.relatedPaymentId}` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
