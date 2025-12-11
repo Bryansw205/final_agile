@@ -6,27 +6,48 @@ import { apiGet, apiPost, apiDownload, apiDownloadReceipt, apiFileUrl } from '..
 import { formatDate } from '../lib/date.js';
 
 /**
- * Redondeo para efectivo en Perú
- * Regla de redondeo:
- * - Si la parte decimal > 0.05: redondea hacia arriba al siguiente 0.10
- * - Si la parte decimal <= 0.05: redondea hacia abajo al 0.10 anterior
+ * Aplica Redondeo Bancario (Banker's Rounding) a múltiplos de S/ 0.10
+ * 
+ * Reglas:
+ * 1. Si el dígito es < 5 o > 5: redondea estándar (hacia abajo si < 5, hacia arriba si > 5)
+ * 2. Si el dígito es exactamente 5 (con precisión flotante):
+ *    - Mira el dígito a la izquierda del 5
+ *    - Si es PAR: redondea hacia abajo
+ *    - Si es IMPAR: redondea hacia arriba
+ * 
  * Ejemplos:
- *   10.66 -> 10.70 (0.66 > 0.05, redondea arriba)
- *   10.56 -> 10.60 (0.56 > 0.05, redondea arriba)
- *   10.04 -> 10.00 (0.04 <= 0.05, redondea abajo)
- *   10.05 -> 10.00 (0.05 <= 0.05, redondea abajo)
+ * - 16.23 → 16.20 (3 < 5, redondea abajo)
+ * - 16.27 → 16.30 (7 > 5, redondea arriba)
+ * - 16.25 → 16.20 (5 exacto, dígito izquierdo es 2=PAR, redondea abajo)
+ * - 10.15 → 10.20 (5 exacto, dígito izquierdo es 1=IMPAR, redondea arriba)
+ * - 10.25 → 10.20 (5 exacto, dígito izquierdo es 2=PAR, redondea abajo)
+ * - 10.35 → 10.40 (5 exacto, dígito izquierdo es 3=IMPAR, redondea arriba)
+ * - 10.45 → 10.40 (5 exacto, dígito izquierdo es 4=PAR, redondea abajo)
  */
 function roundCash(amount) {
   const num = Number(amount);
-  const decimalPart = num % 1;
+  const multiplied = num * 10;
+  const integer = Math.floor(multiplied);
+  const decimal = Math.round((multiplied - integer) * 10) / 10; // Para manejar precisión flotante
   
-  // Si la parte decimal es > 0.05, redondea hacia arriba al siguiente 0.10
-  if (decimalPart > 0.05) {
-    return Math.ceil(num * 10) / 10;
+  // Si el decimal es aproximadamente 0.5 (5 exacto)
+  if (Math.abs(decimal - 0.5) < 0.001) {
+    // Es exactamente 5: aplicar regla del par/impar
+    const leftDigit = integer % 10; // Dígito a la izquierda del 5
+    if (leftDigit % 2 === 0) {
+      // Es PAR: redondea hacia abajo
+      return integer / 10;
+    } else {
+      // Es IMPAR: redondea hacia arriba
+      return (integer + 1) / 10;
+    }
+  } else if (decimal < 0.5) {
+    // Menos de 0.5: redondea hacia abajo
+    return integer / 10;
+  } else {
+    // Más de 0.5: redondea hacia arriba
+    return (integer + 1) / 10;
   }
-  
-  // Si es <= 0.05, redondea hacia abajo al 0.10 anterior
-  return Math.floor(num * 10) / 10;
 }
 
 export default function LoanDetail() {
