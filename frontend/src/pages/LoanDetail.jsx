@@ -773,6 +773,14 @@ export default function LoanDetail() {
         
         handleCloseAdvancePaymentMode();
         
+        // Mostrar modal de comprobante para pago adelantado
+        setReceiptPayment(response.payment);
+        setReceiptType('BOLETA');
+        setInvoiceRuc('');
+        setInvoiceName('');
+        setInvoiceAddress('');
+        setShowReceiptConfig(true);
+        
         console.log('🔄 Recargando datos del préstamo...');
         await load();
         console.log('✅ Datos recargados');

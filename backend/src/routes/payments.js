@@ -186,20 +186,36 @@ router.get(
         return res.status(404).json({ error: 'Pago no encontrado' });
       }
 
-      // Si es un pago adelantado (sin installmentId), obtener todas las cuotas completamente pagadas en la misma fecha
+      // Si es un pago adelantado (sin installmentId), obtener todas las cuotas pagadas relacionadas
+      // El sistema crea múltiples pagos (uno por cuota) con el mismo receiptNumber base
       if (!payment.installmentId && payment.loan.schedules) {
+        // Buscar todos los pagos con el mismo receiptNumber base (sin sufijo)
+        const baseReceiptNumber = payment.receiptNumber.split('-')[0];
+        const relatedPayments = await prisma.payment.findMany({
+          where: {
+            loanId: payment.loanId,
+            receiptNumber: {
+              startsWith: baseReceiptNumber,
+            },
+            paymentDate: payment.paymentDate, // Mismo día
+          },
+        });
+
+        // Construir lista de cuotas pagadas de estos pagos
         const installmentsPaid = [];
-        for (const schedule of payment.loan.schedules) {
-          if (schedule.isPaid) {
-            // Verificar si esta cuota fue marcada como pagada alrededor de la fecha de este pago
-            const timeDiff = Math.abs(new Date(schedule.updatedAt || schedule.isPaid) - new Date(payment.createdAt));
-            // Si fue marcada como pagada en los últimos 5 segundos del pago adelantado, probablemente fue por este pago
-            if (timeDiff < 5000 || (schedule.updatedAt && Math.abs(new Date(schedule.updatedAt) - new Date(payment.createdAt)) < 5000)) {
+        for (const relatedPayment of relatedPayments) {
+          if (relatedPayment.installmentId) {
+            const schedule = payment.loan.schedules.find(s => s.id === relatedPayment.installmentId);
+            if (schedule) {
               installmentsPaid.push({
                 id: schedule.id,
                 installmentNumber: schedule.installmentNumber,
                 dueDate: schedule.dueDate,
                 installmentAmount: Number(schedule.installmentAmount),
+                amountPaid: Number(relatedPayment.amount),
+                principalPaid: Number(relatedPayment.principalPaid || 0),
+                interestPaid: Number(relatedPayment.interestPaid || 0),
+                lateFeePaid: Number(relatedPayment.lateFeePaid || 0),
               });
             }
           }

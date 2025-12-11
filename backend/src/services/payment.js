@@ -580,12 +580,20 @@ export async function registerAdvancePayment({
     throw new Error('No se pudieron crear los pagos');
   });
 
-  payment.installmentsPaid = orderedInstallments.map((s) => ({
-    id: s.id,
-    installmentNumber: s.installmentNumber,
-    dueDate: s.dueDate,
-    installmentAmount: Number(s.installmentAmount),
-  }));
+  // Enriquecer installmentsPaid con el monto realmente pagado de cada cuota
+  payment.installmentsPaid = paymentsCreated.map((p) => {
+    const installment = orderedInstallments.find(s => s.id === p.installmentId);
+    return {
+      id: installment.id,
+      installmentNumber: installment.installmentNumber,
+      dueDate: installment.dueDate,
+      installmentAmount: Number(installment.installmentAmount),
+      amountPaid: Number(p.amount), // Monto realmente pagado (puede ser parcial o completo)
+      principalPaid: Number(p.principalPaid || 0),
+      interestPaid: Number(p.interestPaid || 0),
+      lateFeePaid: Number(p.lateFeePaid || 0),
+    };
+  });
 
   return payment;
 }

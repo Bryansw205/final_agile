@@ -298,20 +298,45 @@ function buildInvoicePdf(doc, payment, invoiceInfo = {}) {
     colX += colWidths[idx];
   });
   
-  // Fila de item
+  // Determinar si es un pago adelantado con múltiples cuotas
+  const installmentsPaid = payment.installmentsPaid || [];
+  const hasMultipleInstallments = installmentsPaid.length > 1;
+  
+  // Filas de items: una por cuota pagada (o una genérica si es pago individual)
   doc.fillColor('black');
   y = tableY + 18;
   doc.font('Helvetica').fontSize(9);
-  colX = tableStartX + 6;
-  doc.text('1', colX, y + 6, { width: colWidths[0] - 12, align: 'left' });
-  colX += colWidths[0];
-  doc.text('Pago de cuota #' + (payment.installmentId ? '1' : 'Adelanto'), colX, y + 6, { width: colWidths[1] - 12, align: 'left' });
-  colX += colWidths[1];
-  doc.text(formatCurrency(opGravada), colX, y + 6, { width: colWidths[2] - 12, align: 'right' });
-  colX += colWidths[2];
-  doc.text(formatCurrency(total), colX, y + 6, { width: colWidths[3] - 12, align: 'right' });
   
-  y += 25;
+  if (hasMultipleInstallments && installmentsPaid.length > 0) {
+    // Desglosar cada cuota pagada
+    let itemCount = 1;
+    for (const installment of installmentsPaid) {
+      colX = tableStartX + 6;
+      doc.text('1', colX, y + 6, { width: colWidths[0] - 12, align: 'left' });
+      colX += colWidths[0];
+      doc.text(`Cuota #${installment.installmentNumber} - Vencimiento ${formatDate(installment.dueDate)}`, colX, y + 6, { width: colWidths[1] - 12, align: 'left' });
+      colX += colWidths[1];
+      const unitPrice = round2(Number(installment.amountPaid || installment.installmentAmount) / 1.18);
+      doc.text(formatCurrency(unitPrice), colX, y + 6, { width: colWidths[2] - 12, align: 'right' });
+      colX += colWidths[2];
+      doc.text(formatCurrency(Number(installment.amountPaid || installment.installmentAmount)), colX, y + 6, { width: colWidths[3] - 12, align: 'right' });
+      y += 18;
+      itemCount++;
+    }
+  } else {
+    // Pago individual: mostrar como antes
+    colX = tableStartX + 6;
+    doc.text('1', colX, y + 6, { width: colWidths[0] - 12, align: 'left' });
+    colX += colWidths[0];
+    doc.text('Pago de cuota #' + (payment.installmentId ? (payment.installmentNumber || '1') : 'Adelanto'), colX, y + 6, { width: colWidths[1] - 12, align: 'left' });
+    colX += colWidths[1];
+    doc.text(formatCurrency(opGravada), colX, y + 6, { width: colWidths[2] - 12, align: 'right' });
+    colX += colWidths[2];
+    doc.text(formatCurrency(total), colX, y + 6, { width: colWidths[3] - 12, align: 'right' });
+    y += 18;
+  }
+  
+  y += 7;
   doc.moveTo(tableStartX, y).lineTo(tableStartX + contentWidth, y).stroke();
 
   // Totales
@@ -457,11 +482,13 @@ function buildBoleta(doc, payment, invoiceInfo = {}) {
     // Mostrar cada cuota en una fila separada con línea divisoria
     let currentY = rowY;
     payment.installmentsPaid.forEach((inst, idx) => {
+      const amountForThisInstallment = Number(inst.amountPaid || inst.installmentAmount);
+      const unitPrice = round2(amountForThisInstallment / 1.18);
       const rowVals = [
         '1 UNIDAD',
         `Pago cuota #${inst.installmentNumber} (${formatDate(inst.dueDate)})`,
-        formatCurrency(inst.installmentAmount),
-        formatCurrency(inst.installmentAmount)
+        formatCurrency(unitPrice),
+        formatCurrency(amountForThisInstallment)
       ];
       x = startX + 8;
       rowVals.forEach((val, idxCol) => {
@@ -474,11 +501,11 @@ function buildBoleta(doc, payment, invoiceInfo = {}) {
     });
     lastRowY = currentY;
   } else {
-    // Pago sin installmentsPaid (compatibilidad - no debería ocurrir)
+    // Pago sin installmentsPaid (compatibilidad)
     const rowVals = [
       '1 UNIDAD',
-      `Pago cuota`,
-      formatCurrency(total),
+      `Pago de cuota`,
+      formatCurrency(opGravada),
       formatCurrency(total)
     ];
     x = startX + 8;
