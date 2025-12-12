@@ -83,6 +83,18 @@ export async function closeCashSession({ sessionId, physicalBalance }) {
   const closingBalance = round2(Number(session.openingBalance) + totalCash);
   const difference = round2(Number(physicalBalance) - closingBalance);
 
+  // Validar que el monto físico sea exactamente igual al monto en caja
+  // No permite cerrar si hay diferencia
+  const TOLERANCE = 0.01; // Tolerancia mínima por redondeos
+  if (Math.abs(difference) > TOLERANCE) {
+    const sign = difference > 0 ? 'más' : 'menos';
+    throw new Error(
+      `No se puede cerrar la caja. Hay ${sign} dinero. ` +
+      `Monto esperado: S/ ${closingBalance.toFixed(2)}, ` +
+      `Monto ingresado: S/ ${Number(physicalBalance).toFixed(2)}`
+    );
+  }
+
   const updatedSession = await prisma.cashSession.update({
     where: { id: sessionId },
     data: {
