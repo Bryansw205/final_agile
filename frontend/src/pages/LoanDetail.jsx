@@ -214,15 +214,6 @@ export default function LoanDetail() {
             } catch (sessionErr) {
               console.error('No se pudo actualizar la sesión de caja después de Flow:', sessionErr);
             }
-            
-            // Mostrar modal de configuración de comprobante para el pago de Flow
-            const flowPayment = flowPayments[0];
-            setReceiptPayment(flowPayment);
-            setReceiptType('BOLETA'); // Default a boleta
-            setInvoiceRuc('');
-            setInvoiceName('');
-            setInvoiceAddress('');
-            setShowReceiptConfig(true);
           }
         } catch (err) {
           if (attempts % 30 === 0) {
