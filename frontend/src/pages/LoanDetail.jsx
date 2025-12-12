@@ -642,16 +642,13 @@ export default function LoanDetail() {
     if (paymentMethod === 'EFECTIVO') {
       // Para EFECTIVO: el cliente puede pagar cualquier monto mayor a 0.10
       // Permitir pagos parciales (no necesita ser >= al total)
+      // Y permitir pagar más para recibir vuelto
       const minAmount = 0.10;
       if (finalAmount < minAmount) {
         setError(`El monto mínimo es S/ ${minAmount.toFixed(2)}`);
         return;
       }
-      // El monto no puede exceder el total a pagar
-      if (finalAmount > totalToPay) {
-        setError(`El monto no puede ser mayor a S/ ${totalToPay.toFixed(2)}`);
-        return;
-      }
+      // No hay límite máximo para efectivo - se puede pagar más y recibir vuelto
     } else {
       // Para digitales: permitir pagos parciales también
       const maxAllowed = totalBase;
