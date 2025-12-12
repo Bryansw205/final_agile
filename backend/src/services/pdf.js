@@ -928,5 +928,79 @@ export function buildCashSessionReport(doc, session) {
   }
   
   doc.moveDown(2);
+  
+  // Movimientos de caja
+  if (session.movements && session.movements.length > 0) {
+    doc.font('Helvetica-Bold').fontSize(11).text('MOVIMIENTOS DE CAJA');
+    doc.font('Helvetica').fontSize(9);
+    doc.moveDown(0.5);
+    
+    // Encabezado de tabla
+    const gutter = 10;
+    const columns = [
+      { key: 'hora', title: 'Hora', width: 60 },
+      { key: 'tipo', title: 'Tipo', width: 80 },
+      { key: 'monto', title: 'Monto', width: 90, align: 'right' },
+      { key: 'descripcion', title: 'Descripción', width: contentWidth - (60 + 80 + 90 + gutter * 2) },
+    ];
+    
+    const rowHeight = 20;
+    let tableY = doc.y;
+    
+    // Dibujar encabezado
+    doc.font('Helvetica-Bold');
+    let x = doc.page.margins.left;
+    columns.forEach(col => {
+      doc.text(col.title, x + 4, tableY, { width: col.width - 8, align: col.align || 'left' });
+      x += col.width + gutter;
+    });
+    tableY += rowHeight;
+    doc.moveTo(doc.page.margins.left, tableY).lineTo(doc.page.width - doc.page.margins.right, tableY).stroke();
+    tableY += 5;
+    
+    // Dibujar filas
+    doc.font('Helvetica');
+    for (const movement of session.movements) {
+      // Verificar espacio en la página
+      if (tableY + rowHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        tableY = doc.page.margins.top;
+        
+        // Redibujar encabezado
+        doc.font('Helvetica-Bold');
+        x = doc.page.margins.left;
+        columns.forEach(col => {
+          doc.text(col.title, x, tableY, { width: col.width, align: col.align || 'left' });
+          x += col.width + gutter;
+        });
+        tableY += rowHeight;
+        doc.moveTo(doc.page.margins.left, tableY).lineTo(doc.page.width - doc.page.margins.right, tableY).stroke();
+        tableY += 5;
+        doc.font('Helvetica');
+      }
+      
+      x = doc.page.margins.left;
+      const hora = dayjs.tz(movement.createdAt, TZ).format('HH:mm');
+      const tipo = movement.movementType;
+      const monto = movement.movementType === 'EGRESO' || movement.movementType === 'VUELTO' 
+        ? `- ${formatCurrency(movement.amount)}` 
+        : formatCurrency(movement.amount);
+      const descripcion = movement.description || '-';
+      
+      const cellY = tableY + 4;
+      const pad = 4;
+      doc.text(hora, x + pad, cellY, { width: columns[0].width - pad * 2 });
+      x += columns[0].width + gutter;
+      doc.text(tipo, x + pad, cellY, { width: columns[1].width - pad * 2 });
+      x += columns[1].width + gutter;
+      doc.text(monto, x + pad, cellY, { width: columns[2].width - pad * 2, align: 'right' });
+      x += columns[2].width + gutter;
+      doc.text(descripcion, x + pad, cellY, { width: columns[3].width - pad * 2 });
+      
+      tableY += rowHeight;
+    }
+  }
+  
+  doc.moveDown(2);
   doc.fontSize(8).text('Reporte generado automáticamente', { align: 'center' });
 }

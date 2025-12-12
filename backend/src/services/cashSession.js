@@ -258,6 +258,11 @@ export async function getCashSessionDetail(sessionId) {
           paymentDate: 'asc',
         },
       },
+      movements: {
+        orderBy: {
+          createdAt: 'asc',
+        },
+      },
     },
   });
 
