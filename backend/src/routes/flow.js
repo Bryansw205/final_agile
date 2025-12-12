@@ -16,34 +16,30 @@ const router = Router();
 const OUTSTANDING_TOLERANCE = 0.05;
 
 async function finalizeReceiptForFlowPayment(externalReference) {
-  // Asigna BOLETA y marca cuota pagada si ya se cubrió el monto
+  // NO asigna automáticamente BOLETA - deja que el usuario elija el tipo de comprobante
   const payments = await prisma.payment.findMany({
     where: { externalReference, receiptType: null },
   });
 
   for (const payment of payments) {
-    const updated = await prisma.payment.update({
-      where: { id: payment.id },
-      data: { receiptType: 'BOLETA' },
-      select: { id: true, installmentId: true, amount: true },
-    });
-
-    if (updated.installmentId) {
+    // Solo marcar cuota pagada si ya se cubrió el monto, sin asignar receiptType
+    if (payment.installmentId) {
       const installment = await prisma.paymentSchedule.findUnique({
-        where: { id: updated.installmentId },
+        where: { id: payment.installmentId },
       });
       if (installment) {
         const paymentsForInstallment = await prisma.payment.findMany({
-          where: { installmentId: updated.installmentId, receiptType: { not: null } },
+          where: { installmentId: payment.installmentId, receiptType: { not: null } },
           select: { amount: true },
         });
         const totalPaid = paymentsForInstallment.reduce(
           (sum, p) => sum + Number(p.amount),
           0
         );
+        // Solo contar pagos con receiptType asignado para marcar como pagado
         if (totalPaid >= Number(installment.installmentAmount) - OUTSTANDING_TOLERANCE) {
           await prisma.paymentSchedule.update({
-            where: { id: updated.installmentId },
+            where: { id: payment.installmentId },
             data: { isPaid: true, remainingBalance: 0 },
           });
         }
