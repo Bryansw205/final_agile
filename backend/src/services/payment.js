@@ -387,7 +387,8 @@ export async function registerAdvancePayment({
       throw new Error('El monto entregado es menor al monto a pagar');
     }
     cashChange = Math.max(0, expectedChange);
-    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.009) {
+    // Permitir tolerancia mayor para vuelto (redondeos)
+    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.05) {
       throw new Error('El vuelto indicado no coincide con el monto entregado');
     }
 
@@ -776,7 +777,8 @@ export async function registerPayment({
       throw new Error('El monto entregado es menor al monto a pagar');
     }
     cashChange = Math.max(0, expectedChange);
-    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.009) {
+    // Permitir tolerancia mayor para vuelto (redondeos)
+    if (change !== null && change !== undefined && Math.abs(cashChange - Number(change)) > 0.05) {
       throw new Error('El vuelto indicado no coincide con el monto entregado');
     }
 
