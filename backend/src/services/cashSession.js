@@ -75,12 +75,9 @@ export async function closeCashSession({ sessionId, physicalBalance }) {
     throw new Error('La sesión de caja ya está cerrada');
   }
 
-  // Calcular el total recaudado
-  const totalCash = session.payments
-    .filter(p => p.paymentMethod === 'EFECTIVO')
-    .reduce((sum, p) => sum + Number(p.amount), 0);
-
-  const closingBalance = round2(Number(session.openingBalance) + totalCash);
+  // Calcular el balance actual incluyendo pagos + movimientos de caja
+  const balance = await getCashSessionBalance(sessionId);
+  const closingBalance = balance.currentBalance;
   const difference = round2(Number(physicalBalance) - closingBalance);
 
   // Validar que el monto físico sea exactamente igual al monto en caja
