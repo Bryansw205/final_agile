@@ -341,8 +341,6 @@ export async function registerAdvancePayment({
   cashSessionId,
   installmentIds, // Array de IDs de cuotas seleccionadas
   externalReference,
-  amountGiven = null,
-  change = null,
 }) {
   console.log('📝 registerAdvancePayment llamado con:', {
     loanId,
@@ -351,9 +349,7 @@ export async function registerAdvancePayment({
     registeredByUserId,
     cashSessionId,
     installmentIds,
-    externalReference,
-    amountGiven,
-    change,
+    externalReference
   });
 
   const {

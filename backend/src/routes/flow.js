@@ -596,38 +596,15 @@ router.post(
       const realPaymentMethod = mapFlowPaymentMethod(paymentStatus.paymentMethod);
       console.log('💳 Método de pago mapeado (confirm): Flow:', paymentStatus.paymentMethod, '-> BD:', realPaymentMethod);
 
-      // Extraer installmentId e installmentIds
-      const installmentId = optional?.installmentId || null;
-      const installmentIds = Array.isArray(optional?.installmentIds)
-        ? optional.installmentIds.map((id) => Number(id))
-        : [];
-      const isAdvance = optional?.isAdvance === true || optional?.isAdvance === 'true';
-
       // Registrar el pago
-      let payment;
-      if (isAdvance && installmentIds && installmentIds.length > 0) {
-        // Pago adelantado a múltiples cuotas
-        payment = await registerAdvancePayment({
-          loanId,
-          amount: paymentStatus.amount,
-          paymentMethod: realPaymentMethod,
-          registeredByUserId,
-          cashSessionId,
-          installmentIds,
-          externalReference: paymentStatus.flowOrder.toString(),
-        });
-      } else {
-        // Pago normal a una sola cuota
-        payment = await registerPayment({
-          loanId,
-          amount: paymentStatus.amount,
-          paymentMethod: realPaymentMethod,
-          registeredByUserId,
-          cashSessionId,
-          installmentId,
-          externalReference: paymentStatus.flowOrder.toString(),
-        });
-      }
+      const payment = await registerPayment({
+        loanId,
+        amount: paymentStatus.amount,
+        paymentMethod: realPaymentMethod,
+        registeredByUserId,
+        cashSessionId,
+        externalReference: paymentStatus.flowOrder.toString(),
+      });
       await finalizeReceiptForFlowPayment(paymentStatus.flowOrder.toString());
 
       res.json({
